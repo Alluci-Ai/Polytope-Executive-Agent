@@ -17,6 +17,12 @@ export enum EmotionalState {
   GROUNDED = "grounded"
 }
 
+export enum AutonomyLevel {
+  RESTRICTED = "RESTRICTED",
+  SEMI_AUTONOMOUS = "SEMI_AUTONOMOUS",
+  SOVEREIGN = "SOVEREIGN"
+}
+
 export interface AffectiveState {
   valence: number;
   arousal: number;
@@ -48,13 +54,6 @@ export interface SkillManifest {
   verified: boolean;
 }
 
-export interface PermissionRequest {
-  id: string;
-  toolName: string;
-  args: any;
-  status: 'pending' | 'granted' | 'denied';
-}
-
 export interface PersonalityTraits {
   satireLevel: number;
   analyticalDepth: number;
@@ -62,7 +61,14 @@ export interface PersonalityTraits {
   verbosity: number;
 }
 
-export type AuthType = 'OAUTH2' | 'SECURE_TUNNEL' | 'IDENTITY_LINK' | 'QR_SYNC' | 'TOKEN' | 'WEB_SESSION';
+export type AuthType = 
+  | 'OAUTH2' 
+  | 'SECURE_TUNNEL' 
+  | 'IDENTITY_LINK' 
+  | 'QR_SYNC' 
+  | 'TOKEN' 
+  | 'WEB_SESSION' 
+  | 'VDXF_HANDSHAKE';
 
 export interface Connection {
   id: string;
@@ -70,40 +76,17 @@ export interface Connection {
   status: 'DISCONNECTED' | 'BINDING' | 'CONNECTED';
   type: 'MESSAGING' | 'WORKSPACE';
   authType: AuthType;
+  autonomyLevel: AutonomyLevel;
   accountAlias?: string;
   profileImg?: string;
   lastSynced?: string;
+  isEncrypted: boolean;
 }
 
 export interface ApiManifoldKeys {
-  llm: {
-    openai: string;
-    anthropic: string;
-    googleCloud: string;
-    groq: string;
-  };
-  audio: {
-    openaiRealtime: string;
-    elevenLabsAgents: string;
-    retellAi: string;
-    inworldAi: string;
-  };
-  music: {
-    suno: string;
-    elevenLabsMusic: string;
-    stableAudio: string;
-    soundverse: string;
-  };
-  image: {
-    openaiDalle: string;
-    falAi: string;
-    midjourney: string;
-    adobeFirefly: string;
-  };
-  video: {
-    runway: string;
-    luma: string;
-    heygen: string;
-    livepeer: string;
-  };
+  llm: Record<string, string>;
+  audio: Record<string, string>;
+  music: Record<string, string>;
+  image: Record<string, string>;
+  video: Record<string, string>;
 }
