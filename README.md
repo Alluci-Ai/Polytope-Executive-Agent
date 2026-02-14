@@ -149,7 +149,6 @@
       <th>Subsystem</th>
       <th>Channel</th>
       <th>Method</th>
-      <th>Status</th>
     </tr>
     <tr>
       <td><strong>Apple Ecosystem</strong></td>
