@@ -13,3 +13,5 @@ playwright==1.41.1
 httpx==0.26.0
 python-multipart==0.0.6
 sqlmodel==0.0.14
+chromadb==0.4.22
+sqlite3-binary==0.0.1
