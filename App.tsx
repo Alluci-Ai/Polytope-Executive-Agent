@@ -11,7 +11,6 @@ import {
   clamp01,
   SkillVerifier
 } from './alluciCore';
-/* Fixed: Removed non-existent PermissionRequest import and added AutonomyLevel */
 import { AuditEntry, PersonalityTraits, Connection, AuthType, SkillManifest, ApiManifoldKeys, AutonomyLevel } from './types';
 
 // [ CONFIGURATION_NODE ]: Replace this with your valid Google Client ID
@@ -48,13 +47,9 @@ const AuthPortal: React.FC<{
 
   const handleAuth = () => {
     setIsLoading(true);
-    
-    // Simulate "One-Touch" / Biometric / Secure Token Handshake
     setTimeout(() => {
       setIsLoading(false);
       setIsVerifying(true);
-      
-      // Simulate biometric/secure confirmation delay
       setTimeout(() => {
         onComplete(
           `active_${connection.id.toLowerCase()}_session`, 
@@ -66,7 +61,7 @@ const AuthPortal: React.FC<{
 
   return (
     <div className="fixed inset-0 z-[250] flex items-center justify-center bg-black/80 backdrop-blur-xl p-4">
-       <div className="facet w-full max-w-md bg-white p-10 border-2 shadow-2xl animate-in zoom-in-95 duration-300">
+       <div className="facet w-full max-w-md bg-white p-6 md:p-10 border-2 shadow-2xl animate-in zoom-in-95 duration-300">
           <div className="h-1.5 w-full flex absolute top-0 left-0">
              <div className="h-full bg-sovereign flex-1" />
              <div className="h-full bg-agent flex-1" />
@@ -76,10 +71,10 @@ const AuthPortal: React.FC<{
           
           <div className="flex justify-between items-center border-b border-sovereign pb-6 mb-8 mt-2">
              <div className="flex flex-col">
-               <span className="baunk-style text-[14px] tracking-[0.4em]">SECURE_HANDSHAKE</span>
+               <span className="baunk-style text-[12px] md:text-[14px] tracking-[0.4em]">SECURE_HANDSHAKE</span>
                <span className="text-[8px] font-mono opacity-40 uppercase">{connection.name} Manifold</span>
              </div>
-             <button onClick={onCancel} className="text-zinc hover:text-black transition-colors">✕</button>
+             <button onClick={onCancel} className="text-zinc hover:text-black transition-colors px-2 py-1">✕</button>
           </div>
 
           <div className="flex flex-col gap-6">
@@ -222,15 +217,58 @@ interface PendingAttachment extends FilePart {
   name: string;
 }
 
+type MobileView = 'terminal' | 'vision' | 'system';
+
+const MobileNav: React.FC<{ active: MobileView; setActive: (v: MobileView) => void }> = ({ active, setActive }) => (
+  <nav className="md:hidden flex h-14 border-t border-sovereign bg-white z-40 shrink-0 shadow-[0_-5px_20px_rgba(0,0,0,0.05)]">
+    <button onClick={() => setActive('vision')} className={`flex-1 flex flex-col items-center justify-center gap-1 baunk-style text-[8px] transition-colors ${active === 'vision' ? 'bg-sovereign text-white' : 'text-zinc hover:bg-zinc/5'}`}>
+      <span>[ VISION ]</span>
+    </button>
+    <button onClick={() => setActive('terminal')} className={`flex-1 flex flex-col items-center justify-center gap-1 baunk-style text-[8px] transition-colors border-x border-sovereign/10 ${active === 'terminal' ? 'bg-sovereign text-white' : 'text-zinc hover:bg-zinc/5'}`}>
+      <span>[ TERMINAL ]</span>
+    </button>
+    <button onClick={() => setActive('system')} className={`flex-1 flex flex-col items-center justify-center gap-1 baunk-style text-[8px] transition-colors ${active === 'system' ? 'bg-sovereign text-white' : 'text-zinc hover:bg-zinc/5'}`}>
+      <span>[ SYSTEM ]</span>
+    </button>
+  </nav>
+);
+
+const MobileMenu: React.FC<{ isOpen: boolean; onClose: () => void; onAction: (action: string) => void }> = ({ isOpen, onClose, onAction }) => {
+  if (!isOpen) return null;
+  return (
+    <div className="fixed inset-0 z-[60] bg-white/95 backdrop-blur-xl flex flex-col p-8 gap-6 animate-in fade-in duration-200">
+       <div className="flex justify-between items-center border-b border-sovereign pb-4">
+          <span className="baunk-style text-lg tracking-widest">[ MENU ]</span>
+          <button onClick={onClose} className="text-xl p-2">✕</button>
+       </div>
+       <div className="flex flex-col gap-3 text-center overflow-y-auto">
+          <button onClick={() => onAction('audit')} className="alce-button baunk-style text-xs py-4 border-b border-zinc/10">[ AUDIT_LOG ]</button>
+          <button onClick={() => onAction('files')} className="alce-button baunk-style text-xs py-4 border-b border-zinc/10">[ FILES ]</button>
+          <button onClick={() => onAction('skills')} className="alce-button baunk-style text-xs py-4 border-b border-zinc/10">[ SKILLS ]</button>
+          <button onClick={() => onAction('bridges')} className="alce-button baunk-style text-xs py-4 border-b border-zinc/10">[ BRIDGES ]</button>
+          <button onClick={() => onAction('api')} className="alce-button baunk-style text-xs py-4 border-b border-zinc/10">[ API_KEYS ]</button>
+          <button onClick={() => onAction('soul')} className="alce-button baunk-style text-xs py-4">[ SOUL_CORE ]</button>
+       </div>
+    </div>
+  );
+};
+
 const App: React.FC = () => {
   const [isConnected, setIsConnected] = useState(false);
   const [isCameraActive, setIsCameraActive] = useState(false);
+  
+  // Mobile Responsiveness States
+  const [mobileView, setMobileView] = useState<MobileView>('terminal');
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+  // Modal States
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isDriveOpen, setIsDriveOpen] = useState(false);
   const [isAuditOpen, setIsAuditOpen] = useState(false);
   const [isPreferencesOpen, setIsPreferencesOpen] = useState(false);
   const [isSoulOpen, setIsSoulOpen] = useState(false);
   const [isApiManifoldOpen, setIsApiManifoldOpen] = useState(false);
+  
   const [activeAuth, setActiveAuth] = useState<Connection | null>(null);
   const [selectedSkill, setSelectedSkill] = useState<SkillManifest | null>(null);
   
@@ -280,7 +318,6 @@ const App: React.FC = () => {
     localStorage.setItem('alluci_api_keys', JSON.stringify(apiKeys));
   }, [apiKeys]);
 
-  /* Fixed: Added missing autonomyLevel and isEncrypted properties to Connection objects */
   const [connections, setConnections] = useState<Connection[]>([
     { id: 'icloud', name: 'iCloud', status: 'DISCONNECTED', type: 'WORKSPACE', authType: 'TOKEN', autonomyLevel: AutonomyLevel.RESTRICTED, isEncrypted: false },
     { id: 'imessage', name: 'iMessage', status: 'DISCONNECTED', type: 'MESSAGING', authType: 'SECURE_TUNNEL', autonomyLevel: AutonomyLevel.RESTRICTED, isEncrypted: true },
@@ -326,10 +363,13 @@ const App: React.FC = () => {
   useLayoutEffect(() => {
     const container = scrollContainerRef.current;
     if (container) {
-      const isAtBottom = container.scrollHeight - container.scrollTop <= container.clientHeight + 100;
-      if (isAtBottom) messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      // Auto-scroll logic: only if near bottom or if message is user's
+      const isAtBottom = container.scrollHeight - container.scrollTop <= container.clientHeight + 150;
+      if (isAtBottom || (transcriptions.length > 0 && transcriptions[transcriptions.length-1].isUser)) {
+         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      }
     }
-  }, [transcriptions, isProcessing]);
+  }, [transcriptions, isProcessing, mobileView]);
 
   useEffect(() => {
     const drift = setInterval(() => {
@@ -514,6 +554,18 @@ const App: React.FC = () => {
     setTimeout(() => setIsSettingsOpen(true), 10);
   };
 
+  const handleMobileMenuAction = (action: string) => {
+    setIsMobileMenuOpen(false);
+    switch(action) {
+      case 'audit': setIsAuditOpen(true); refreshAuditLog(); break;
+      case 'files': setIsDriveOpen(true); break;
+      case 'skills': setIsSettingsOpen(true); break;
+      case 'bridges': setIsPreferencesOpen(true); break;
+      case 'api': setIsApiManifoldOpen(true); break;
+      case 'soul': setIsSoulOpen(true); break;
+    }
+  };
+
   const updateApiKey = (category: keyof ApiManifoldKeys, provider: string, value: string) => {
     setApiKeys(prev => ({
       ...prev,
@@ -535,21 +587,25 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="simplicial-grid grid-cols-1 md:grid-cols-12 h-screen w-screen overflow-hidden bg-manifold">
+    <div className="h-[100dvh] w-screen overflow-hidden bg-white flex flex-col md:grid md:grid-cols-12 md:gap-[2px] md:p-[2px] simplicial-grid">
       {activeAuth && <AuthPortal connection={activeAuth} onComplete={handleAuthComplete} onCancel={() => setActiveAuth(null)} />}
-      
-      <header className="facet col-span-full h-16 flex items-center px-6 justify-between z-50 border-b border-sovereign bg-white">
-        <div className="flex items-center gap-4">
-           <PolytopeIdentity color={accentColor} size={32} active={isConnected} />
+      <MobileMenu isOpen={isMobileMenuOpen} onClose={() => setIsMobileMenuOpen(false)} onAction={handleMobileMenuAction} />
+
+      {/* Header */}
+      <header className="facet col-span-full h-14 md:h-16 flex items-center px-4 md:px-6 justify-between z-50 border-b md:border border-sovereign bg-white shrink-0">
+        <div className="flex items-center gap-3 md:gap-4">
+           <PolytopeIdentity color={accentColor} size={24} active={isConnected} />
            <div className="flex flex-col">
-             <h1 className="baunk-style text-[10px] tracking-[0.4em]">[ POLYTOPE ] v4.3</h1>
-             <span className="text-[6px] font-mono opacity-30 uppercase tracking-tighter">Autonomous_Executive_Manifold</span>
+             <h1 className="baunk-style text-[9px] md:text-[10px] tracking-[0.2em] md:tracking-[0.4em]">[ POLYTOPE ] v4.3</h1>
+             <span className="text-[6px] font-mono opacity-30 uppercase tracking-tighter hidden md:block">Autonomous_Executive_Manifold</span>
            </div>
         </div>
-        <div className="flex items-center gap-2 md:gap-4">
+        
+        {/* Desktop Controls */}
+        <div className="hidden md:flex items-center gap-4">
           <button onClick={() => { setIsAuditOpen(true); refreshAuditLog(); }} className="alce-button text-[8px] baunk-style hidden lg:block">[ AUDIT ]</button>
-          <button onClick={() => setIsDriveOpen(!isDriveOpen)} className="alce-button text-[8px] baunk-style hidden md:block">[ FILES ]</button>
-          <button onClick={() => setIsSettingsOpen(!isSettingsOpen)} className="alce-button text-[8px] baunk-style hidden md:block">[ SKILLS ]</button>
+          <button onClick={() => setIsDriveOpen(!isDriveOpen)} className="alce-button text-[8px] baunk-style hidden lg:block">[ FILES ]</button>
+          <button onClick={() => setIsSettingsOpen(!isSettingsOpen)} className="alce-button text-[8px] baunk-style">[ SKILLS ]</button>
           <button onClick={() => setIsPreferencesOpen(true)} className="alce-button text-[8px] baunk-style">[ BRIDGES ]</button>
           <button onClick={() => setIsApiManifoldOpen(true)} className="alce-button text-[8px] baunk-style">[ API ]</button>
           <button onClick={() => setIsSoulOpen(true)} className="alce-button text-[8px] baunk-style">[ SOUL ]</button>
@@ -557,10 +613,21 @@ const App: React.FC = () => {
              {isConnected ? '[ SLEEP ]' : '[ AWAKEN ]'}
           </button>
         </div>
+
+        {/* Mobile Controls */}
+        <div className="flex md:hidden items-center gap-3">
+          <button onClick={handleConnect} className={`alce-button text-[8px] baunk-style px-3 py-1.5 ${isConnected ? 'text-tension' : 'text-agent'}`}>
+             {isConnected ? '[ SLEEP ]' : '[ AWAKEN ]'}
+          </button>
+          <button onClick={() => setIsMobileMenuOpen(true)} className="alce-button baunk-style text-[10px] px-3 py-1.5 border-l border-sovereign">
+            ☰
+          </button>
+        </div>
       </header>
 
-      <aside className="hidden md:flex md:col-span-3 flex-col bg-zinc/5 overflow-y-auto scrollbar-hide border-r border-sovereign">
-         <div className="facet flex-none h-48 p-4 border-none">
+      {/* Left Sidebar / Vision Tab */}
+      <aside className={`md:col-span-3 bg-zinc/5 overflow-y-auto scrollbar-hide md:border-r border-sovereign flex flex-col ${mobileView === 'vision' ? 'flex-1' : 'hidden md:flex'}`}>
+         <div className="facet flex-none h-48 md:h-64 lg:h-48 p-4 border-none">
             <div className="flex-1 bg-white relative border border-sovereign overflow-hidden">
                <CircularVisualizer stream={audioStream} active={isConnected} accent={accentColor} />
                <video ref={videoRef} autoPlay playsInline muted className={`absolute inset-0 w-full h-full object-cover grayscale opacity-0 ${isCameraActive ? 'opacity-40' : ''}`} />
@@ -590,18 +657,19 @@ const App: React.FC = () => {
          </div>
       </aside>
 
-      <main className="facet col-span-full md:col-span-6 flex flex-col relative h-[calc(100vh-64px)] md:h-auto border-none">
-        <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-4 md:p-8 flex flex-col gap-8 scrollbar-hide bg-white">
+      {/* Main / Terminal Tab */}
+      <main className={`md:col-span-6 facet relative md:border-none flex flex-col min-h-0 ${mobileView === 'terminal' ? 'flex-1' : 'hidden md:flex'}`}>
+        <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-4 md:p-8 flex flex-col gap-6 md:gap-8 scrollbar-hide bg-white">
           {transcriptions.length === 0 && (
             <div className="h-full flex flex-col items-center justify-center opacity-5 select-none animate-pulse">
-              <PolytopeIdentity color="#000" size={120} />
+              <PolytopeIdentity color="#000" size={100} />
               <h2 className="baunk-style text-[8px] mt-6 tracking-[1.2em]">EXECUTIVE_SESSION_IDLE</h2>
             </div>
           )}
           {transcriptions.map((t, i) => (
             <div key={i} className={`flex flex-col ${t.isUser ? 'items-end' : 'items-start'} animate-in fade-in slide-in-from-bottom-2 duration-300`}>
                <span className="text-[6px] baunk-style mb-1 opacity-30 tracking-widest">{t.isUser ? 'USER_PROJECTION' : 'ALLUCI_EXECUTIVE'}</span>
-               <div className={`max-w-[85%] px-5 py-4 text-[12px] border font-mono leading-relaxed ${t.isUser ? 'bg-white border-zinc/20' : 'bg-agent/5 border-agent/20'}`}>
+               <div className={`max-w-[90%] md:max-w-[85%] px-4 md:px-5 py-3 md:py-4 text-[11px] md:text-[12px] border font-mono leading-relaxed ${t.isUser ? 'bg-white border-zinc/20' : 'bg-agent/5 border-agent/20'}`}>
                  {t.text}
                  {t.sources && t.sources.length > 0 && (
                    <div className="mt-4 pt-4 border-t border-agent/10 flex flex-wrap gap-2">
@@ -617,10 +685,10 @@ const App: React.FC = () => {
             </div>
           ))}
           {isProcessing && <div className="text-[8px] baunk-style text-flux animate-pulse tracking-[0.5em] py-2">ALLUCI_CORE_CALCULATING_TRAJECTORY...</div>}
-          <div ref={messagesEndRef} className="h-4 flex-none" />
+          <div ref={messagesEndRef} className="h-2 flex-none" />
         </div>
         
-        <form onSubmit={handleCommandSubmit} className="p-4 border-t border-sovereign bg-zinc/5 flex flex-col gap-2 shadow-[0_-10px_30px_rgba(0,0,0,0.03)]">
+        <form onSubmit={handleCommandSubmit} className="shrink-0 p-3 md:p-4 border-t border-sovereign bg-zinc/5 flex flex-col gap-2 shadow-[0_-10px_30px_rgba(0,0,0,0.03)] z-10">
            {attachments.length > 0 && (
              <div className="flex flex-wrap gap-2 mb-1">
                {attachments.map((file, idx) => (
@@ -632,9 +700,9 @@ const App: React.FC = () => {
                ))}
              </div>
            )}
-           <div className="flex gap-3 items-end">
+           <div className="flex gap-2 md:gap-3 items-end">
              <div className="flex gap-1">
-                <button type="button" onClick={() => fileInputRef.current?.click()} title="Ingest Data" className="alce-button baunk-style text-[14px] h-12 w-12 p-0 flex items-center justify-center transition-transform active:scale-95">+</button>
+                <button type="button" onClick={() => fileInputRef.current?.click()} title="Ingest Data" className="alce-button baunk-style text-[14px] h-10 w-10 md:h-12 md:w-12 p-0 flex items-center justify-center transition-transform active:scale-95 bg-white">+</button>
                 <input type="file" ref={fileInputRef} onChange={handleFileChange} multiple className="hidden" />
              </div>
              <textarea 
@@ -642,14 +710,15 @@ const App: React.FC = () => {
                onChange={(e) => setTextInput(e.target.value)} 
                onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleCommandSubmit(e); } }} 
                placeholder="EXECUTIVE_COMMAND..." 
-               className="flex-1 bg-white border border-sovereign/10 focus:border-sovereign transition-colors text-xs tracking-widest font-medium p-4 resize-none scrollbar-hide h-12 rounded-none" 
+               className="flex-1 bg-white border border-sovereign/10 focus:border-sovereign transition-colors text-xs tracking-widest font-medium p-3 md:p-4 resize-none scrollbar-hide h-10 md:h-12 rounded-none" 
              />
-             <button type="submit" className="alce-button baunk-style text-[10px] h-12 px-8 flex items-center justify-center">[ TRANSMIT ]</button>
+             <button type="submit" className="alce-button baunk-style text-[9px] md:text-[10px] h-10 md:h-12 px-4 md:px-8 flex items-center justify-center bg-white">[ TRANSMIT ]</button>
            </div>
         </form>
       </main>
 
-      <aside className="hidden md:flex md:col-span-3 p-6 flex-col gap-6 bg-zinc/5 overflow-hidden border-l border-sovereign">
+      {/* Right Sidebar / System Tab */}
+      <aside className={`md:col-span-3 p-4 md:p-6 bg-zinc/5 overflow-hidden border-l border-sovereign flex flex-col gap-6 ${mobileView === 'system' ? 'flex-1' : 'hidden md:flex'}`}>
          <h3 className="baunk-style text-[8px] opacity-40 border-b border-sovereign pb-1 text-center">Audit_Chain_v4.3</h3>
          <div className="flex-1 overflow-y-auto scrollbar-hide flex flex-col gap-4 text-[7px]">
             {auditLog.slice(0, 15).map((e, i) => (
@@ -663,19 +732,27 @@ const App: React.FC = () => {
          </div>
       </aside>
 
+      {/* Mobile Bottom Navigation */}
+      <MobileNav active={mobileView} setActive={setMobileView} />
+
+      <footer className="facet hidden md:flex col-span-full h-8 items-center justify-center bg-zinc/5 border-t border-sovereign text-[7px] baunk-style opacity-30 tracking-[2em] font-bold">
+         ALLUCI_EXECUTIVE_OS_v4.3_STABLE_SOVEREIGN_PROTOCOL
+      </footer>
+
+      {/* Unified Modal Layer - Responsive */}
       {(isAuditOpen || isPreferencesOpen || isSettingsOpen || isDriveOpen || isSoulOpen || isApiManifoldOpen) && (
-        <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm p-6 flex items-center justify-center animate-in fade-in duration-300">
-           <div className="facet w-full max-w-6xl h-[90vh] bg-white shadow-2xl flex flex-col border-2 overflow-hidden animate-in zoom-in-95 relative">
-              <header className="p-8 border-b border-sovereign flex justify-between items-center bg-white z-[120]">
+        <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm p-0 md:p-6 flex items-end md:items-center justify-center animate-in fade-in duration-300">
+           <div className="facet w-full h-[100dvh] md:h-[90vh] md:w-full md:max-w-6xl bg-white shadow-2xl flex flex-col border-t-2 md:border-2 border-sovereign overflow-hidden animate-in slide-in-from-bottom-10 md:zoom-in-95 relative">
+              <header className="p-4 md:p-8 border-b border-sovereign flex justify-between items-center bg-white z-[120]">
                  <div className="flex flex-col">
-                   <h2 className="baunk-style text-sm md:text-lg tracking-[0.5em]">
+                   <h2 className="baunk-style text-xs md:text-lg tracking-[0.2em] md:tracking-[0.5em] truncate max-w-[200px] md:max-w-none">
                      {isAuditOpen ? 'EXECUTIVE_LEDGER' : isSettingsOpen ? 'SKILL_MANIFEST' : isPreferencesOpen ? 'BRIDGE_DIRECTORY' : isDriveOpen ? 'FILE_MANIFOLD' : isSoulOpen ? 'SOUL_PREFERENCES' : isApiManifoldOpen ? 'API_MANIFOLD_PREFERENCES' : ''}
                    </h2>
-                   <span className="text-[8px] font-mono opacity-30 uppercase mt-1">Sovereign_Protocol_v4.3_Active</span>
+                   <span className="text-[6px] md:text-[8px] font-mono opacity-30 uppercase mt-1">Sovereign_Protocol_v4.3_Active</span>
                  </div>
-                 <button onClick={() => { setIsAuditOpen(false); setIsPreferencesOpen(false); setIsSettingsOpen(false); setIsDriveOpen(false); setIsSoulOpen(false); setIsApiManifoldOpen(false); setSelectedSkill(null); }} className="alce-button baunk-style text-[10px] hover:bg-tension px-10">[ EXIT ]</button>
+                 <button onClick={() => { setIsAuditOpen(false); setIsPreferencesOpen(false); setIsSettingsOpen(false); setIsDriveOpen(false); setIsSoulOpen(false); setIsApiManifoldOpen(false); setSelectedSkill(null); }} className="alce-button baunk-style text-[9px] md:text-[10px] hover:bg-tension px-4 md:px-10 py-2">[ EXIT ]</button>
               </header>
-              <div className="flex-1 overflow-y-auto p-10 scrollbar-hide relative">
+              <div className="flex-1 overflow-y-auto p-4 md:p-10 scrollbar-hide relative">
                  {isApiManifoldOpen ? (
                     <div className="flex flex-col gap-12 pb-20">
                       <div className="p-6 bg-agent/5 border border-agent/20 text-[10px] font-mono leading-relaxed mb-6">
@@ -810,18 +887,18 @@ const App: React.FC = () => {
                       </div>
                     </div>
                  ) : isSoulOpen ? (
-                    <div className="flex flex-col gap-16 py-8">
-                       <div className="grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
+                    <div className="flex flex-col gap-8 md:gap-16 py-4 md:py-8">
+                       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 md:gap-16 items-center">
                           <div className="flex flex-col items-center justify-center space-y-8 py-10 bg-zinc/5 border border-sovereign/5">
-                             <PolytopeIdentity color="#91D65F" size={160} active={isConnected} />
+                             <PolytopeIdentity color="#91D65F" size={120} active={isConnected} />
                              <div className="text-center">
                                 <span className="baunk-style text-[10px] tracking-[0.5em] block opacity-40">Affective_Core_v4.3</span>
                                 <h3 className="baunk-style text-xl mt-2">Alluci_Identity_Nexus</h3>
                              </div>
                           </div>
-                          <div className="space-y-12 px-4">
+                          <div className="space-y-8 md:space-y-12 px-0 md:px-4">
                              <h3 className="baunk-style text-[12px] border-b border-sovereign pb-1 opacity-50 tracking-[0.3em]">Personality_Calibration_Matrix</h3>
-                             <div className="space-y-10">
+                             <div className="space-y-6 md:space-y-10">
                                {['satireLevel', 'analyticalDepth', 'protectiveBias', 'verbosity'].map(trait => (
                                  <div key={trait} className="group">
                                     <div className="flex justify-between items-center baunk-style text-[9px] mb-4">
@@ -901,23 +978,23 @@ const App: React.FC = () => {
                     </div>
                  ) : isAuditOpen ? (
                     <div className="flex flex-col gap-6 font-mono text-[10px]">
-                       <div className="grid grid-cols-5 gap-4 pb-4 border-b-2 border-sovereign baunk-style text-sovereign text-[9px] tracking-widest">
+                       <div className="hidden md:grid grid-cols-5 gap-4 pb-4 border-b-2 border-sovereign baunk-style text-sovereign text-[9px] tracking-widest">
                           <span>TIMESTAMP</span><span>EVENT_TYPE</span><span>ENTITY</span><span>DETAILS</span><span>MANIFOLD_HASH</span>
                        </div>
-                       <div className="space-y-2">
+                       <div className="space-y-4 md:space-y-2">
                          {auditLog.map((e, i) => (
-                           <div key={i} className="grid grid-cols-5 gap-4 py-4 border-b border-zinc/10 hover:bg-zinc/5 transition-colors group">
-                              <span className="opacity-40">{e.timestamp}</span>
+                           <div key={i} className="flex flex-col md:grid md:grid-cols-5 gap-2 md:gap-4 py-3 md:py-4 border-b border-zinc/10 hover:bg-zinc/5 transition-colors group">
+                              <span className="opacity-40 text-[9px] md:text-inherit">{e.timestamp}</span>
                               <span className="font-bold group-hover:text-agent transition-colors">{e.event}</span>
-                              <span className="opacity-60">{e.details.channel || e.details.tool || 'SYSTEM'}</span>
+                              <span className="opacity-60 hidden md:block">{e.details.channel || e.details.tool || 'SYSTEM'}</span>
                               <span className="truncate opacity-80 italic">{JSON.stringify(e.details)}</span>
-                              <span className="text-agent font-bold">{e.hash}</span>
+                              <span className="text-agent font-bold text-[9px] md:text-inherit">{e.hash}</span>
                            </div>
                          ))}
                        </div>
                     </div>
                  ) : isSettingsOpen ? (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                        {skillVerifier.current.getManifests().map(skill => (
                          <div 
                            key={skill.id} 
@@ -956,7 +1033,7 @@ const App: React.FC = () => {
                          <div className="absolute inset-0 bg-agent/5 rounded-full blur-3xl scale-150 animate-pulse" />
                          <PolytopeIdentity color="#000" size={160} active={isConnected} />
                        </div>
-                       <div className="text-center space-y-4 max-w-xl">
+                       <div className="text-center space-y-4 max-w-xl px-6">
                           <h3 className="baunk-style text-xl tracking-[0.8em]">MANIFOLD_STORAGE_STABLE</h3>
                           <p className="text-[11px] opacity-40 font-mono leading-relaxed">
                             Awaiting sovereign data packets. Integrated iCloud, Google Drive, and MS Teams bridges are prepared for bi-directional synchronization.
@@ -969,7 +1046,7 @@ const App: React.FC = () => {
 
               {/* Skill Detail Popup - Anchored smaller centered window */}
               {selectedSkill && (
-                <div className="absolute top-24 left-1/2 -translate-x-1/2 z-[150] w-[90%] max-w-2xl max-h-[75vh] bg-white border-2 border-sovereign shadow-[0_20px_60px_rgba(0,0,0,0.3)] flex flex-col animate-in slide-in-from-top-10 duration-500">
+                <div className="absolute top-0 md:top-24 left-0 md:left-1/2 md:-translate-x-1/2 z-[150] w-full h-full md:h-auto md:w-[90%] max-w-2xl md:max-h-[75vh] bg-white border-2 border-sovereign shadow-[0_20px_60px_rgba(0,0,0,0.3)] flex flex-col animate-in slide-in-from-top-10 duration-500">
                   <header className="p-6 border-b border-sovereign flex justify-between items-center bg-white shrink-0">
                     <div className="flex flex-col">
                       <span className="text-agent baunk-style text-[8px] tracking-[0.4em] mb-1">{selectedSkill.category}</span>
@@ -1059,10 +1136,6 @@ const App: React.FC = () => {
            </div>
         </div>
       )}
-
-      <footer className="facet col-span-full h-8 flex items-center justify-center bg-zinc/5 border-t border-sovereign text-[7px] baunk-style opacity-30 tracking-[2em] font-bold">
-         ALLUCI_EXECUTIVE_OS_v4.3_STABLE_SOVEREIGN_PROTOCOL
-      </footer>
     </div>
   );
 };
