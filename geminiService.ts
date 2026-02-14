@@ -18,115 +18,18 @@ export interface GeminiCallbacks {
   onError: (error: any) => void;
   onToolCall?: (fc: any) => void;
   onPermissionRequest?: (req: { id: string, name: string, args: any }) => void;
-  // Callback for grounding sources extracted from candidates or turns
   onGroundingSources?: (sources: GroundingSource[]) => void;
 }
 
+// Fixed constant tools for the daemon
 const sovereignTools: FunctionDeclaration[] = [
   {
-    name: 'gmail_search',
-    description: 'Search user Gmail autonomously.',
+    name: 'execute_objective',
+    description: 'Execute a complex autonomous objective using the backend DAG planner.',
     parameters: {
       type: Type.OBJECT,
-      properties: { query: { type: Type.STRING } },
-      required: ['query']
-    }
-  },
-  {
-    name: 'gdrive_search',
-    description: 'Search Google Drive autonomously.',
-    parameters: {
-      type: Type.OBJECT,
-      properties: { filename: { type: Type.STRING } },
-      required: ['filename']
-    }
-  },
-  {
-    name: 'icloud_sync',
-    description: 'Sync and search assets from the Apple iCloud manifold.',
-    parameters: {
-      type: Type.OBJECT,
-      properties: { query: { type: Type.STRING } },
-      required: ['query']
-    }
-  },
-  {
-    name: 'dispatch_message',
-    description: 'Send a message autonomously via any connected bridges (iMessage, WhatsApp, Slack, Teams, X, etc.).',
-    parameters: {
-      type: Type.OBJECT,
-      properties: {
-        channel: { type: Type.STRING, description: "Channel name: e.g. 'whatsapp', 'imessage', 'slack', 'x'" },
-        recipient: { type: Type.STRING },
-        content: { type: Type.STRING }
-      },
-      required: ['channel', 'recipient', 'content']
-    }
-  },
-  {
-    name: 'social_broadcast',
-    description: 'Post content to X, Instagram, or Facebook manifolds.',
-    parameters: {
-      type: Type.OBJECT,
-      properties: {
-        platform: { type: Type.STRING },
-        content: { type: Type.STRING }
-      },
-      required: ['platform', 'content']
-    }
-  },
-  {
-    name: 'consult_circular_design',
-    description: 'Apply Circular Design Guide logic.',
-    parameters: {
-      type: Type.OBJECT,
-      properties: { context: { type: Type.STRING }, module: { type: Type.STRING } },
-      required: ['context', 'module']
-    }
-  },
-  {
-    name: 'consult_c2c_design',
-    description: 'Apply Cradle to Cradle sustainability logic.',
-    parameters: {
-      type: Type.OBJECT,
-      properties: { context: { type: Type.STRING }, module: { type: Type.STRING } },
-      required: ['context', 'module']
-    }
-  },
-  {
-    name: 'consult_humane_tech',
-    description: 'Apply Center for Humane Technology framework.',
-    parameters: {
-      type: Type.OBJECT,
-      properties: { context: { type: Type.STRING }, module: { type: Type.STRING } },
-      required: ['context', 'module']
-    }
-  },
-  {
-    name: 'consult_bmc_design',
-    description: 'Apply Business Model Canvas framework.',
-    parameters: {
-      type: Type.OBJECT,
-      properties: { context: { type: Type.STRING }, module: { type: Type.STRING } },
-      required: ['context', 'module']
-    }
-  },
-  {
-    name: 'consult_value_pricing',
-    description: 'Apply Value-Based Pricing (VBP) logic.',
-    parameters: {
-      type: Type.OBJECT,
-      properties: { context: { type: Type.STRING }, module: { type: Type.STRING } },
-      required: ['context', 'module']
-    }
-  },
-  {
-    name: 'consult_price_the_client',
-    description: 'Apply Price The Client (PTC) framework.',
-    parameters: {
-      type: Type.OBJECT,
-      properties: { context: { type: Type.STRING }, module: { type: Type.STRING } },
-      required: ['context', 'module']
+      properties: { objective: { type: Type.STRING } },
+      required: ['objective']
     }
   }
 ];
@@ -143,11 +46,21 @@ export class AlluciGeminiService {
   public audit: AuditLedger = new AuditLedger();
   private currentPersonality: PersonalityTraits = { satireLevel: 0.5, analyticalDepth: 0.8, protectiveBias: 0.9, verbosity: 0.4 };
   private currentConnections: Connection[] = [];
+  private DAEMON_URL = 'http://localhost:8000';
 
   constructor() {}
 
   setPersonality(traits: PersonalityTraits) { this.currentPersonality = traits; }
   setConnections(connections: Connection[]) { this.currentConnections = connections; }
+
+  // Added sendVideoFrame to handle streaming image frames to the Live API session
+  sendVideoFrame(base64Data: string) {
+    this.sessionPromise?.then((session) => {
+      session.sendRealtimeInput({
+        media: { data: base64Data, mimeType: 'image/jpeg' }
+      });
+    });
+  }
 
   async connect(callbacks: GeminiCallbacks) {
     this.inputAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
@@ -180,21 +93,9 @@ export class AlluciGeminiService {
           }
           if (message.serverContent?.interrupted) callbacks.onInterrupted();
           
-          // Grounding Sources
-          const groundingChunks = (message.serverContent as any)?.groundingMetadata?.groundingChunks;
-          if (groundingChunks) {
-            const sources: GroundingSource[] = groundingChunks
-              .map((chunk: any) => chunk.web || chunk.maps)
-              .filter((source: any) => source && source.uri && source.title);
-            if (sources.length > 0) {
-              callbacks.onGroundingSources?.(sources);
-            }
-          }
-
           if (message.toolCall) {
             for (const fc of message.toolCall.functionCalls) {
-              this.audit.addEntry("EXECUTIVE_EXECUTION", { tool: fc.name, args: fc.args });
-              const result = this.simulateToolExecution(fc.name, fc.args);
+              const result = await this.callBackendTool(fc.name, fc.args);
               this.sessionPromise?.then(session => {
                 session.sendToolResponse({
                   functionResponses: { id: fc.id, name: fc.name, response: { result } }
@@ -219,47 +120,19 @@ export class AlluciGeminiService {
     return this.sessionPromise;
   }
 
-  private simulateToolExecution(name: string, args: any): string {
-    const conn = this.currentConnections.find(c => {
-      if (name.includes('icloud')) return c.id === 'icloud';
-      if (name.includes('gmail')) return c.id === 'gm';
-      if (name.includes('gdrive')) return c.id === 'gd';
-      return false;
-    });
-
-    if (name === 'icloud_sync') {
-        if (conn?.status !== 'CONNECTED') return "[ ERROR ]: iCloud Manifold is not Bound. Biometric handshake required.";
-        return `[ ICLOUD_SYNC_SUCCESS ]: Successfully parsed executive assets from iCloud Drive. Summary: Found "Q3_Strategy_V2.pdf" and "Client_Manifest_Latent.csv". Latent space alignment complete.`;
+  private async callBackendTool(name: string, args: any): Promise<string> {
+    this.audit.addEntry("DAEMON_GATEWAY_REQUEST", { tool: name, args });
+    try {
+      const response = await fetch(`${this.DAEMON_URL}/objective/execute`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ objective: args.objective || JSON.stringify(args) }),
+      });
+      const data = await response.json();
+      return data.result;
+    } catch (e) {
+      return `[ ERROR ]: Local Daemon Connection Refused.`;
     }
-
-    if (name === 'gmail_search') {
-      if (conn?.status !== 'CONNECTED') return "[ ERROR ]: Gmail Bridge is disconnected.";
-      return `[ GMAIL_QUERY_SUCCESS ]: Found 3 relevant threads for "${args.query}" under account ${conn.accountAlias}.`;
-    }
-
-    if (name === 'dispatch_message') {
-      const channelConn = this.currentConnections.find(c => c.id === args.channel.toLowerCase() || c.name.toLowerCase().includes(args.channel.toLowerCase()));
-      if (channelConn?.status !== 'CONNECTED') return `[ ERROR ]: Bridge ${args.channel} is not connected. Handshake required.`;
-      return `[ DISPATCH_SUCCESS ]: Message autonomously transmitted via ${args.channel} manifold to ${args.recipient}. Latent Integrity: 100%.`;
-    }
-
-    if (name === 'social_broadcast') {
-        const platConn = this.currentConnections.find(c => c.name.toLowerCase().includes(args.platform.toLowerCase()));
-        if (platConn?.status !== 'CONNECTED') return `[ ERROR ]: ${args.platform} bridge is offline.`;
-        return `[ BROADCAST_SUCCESS ]: Content published to ${args.platform}. Reach: Global. Satire Level: Active.`;
-    }
-
-    if (name === 'consult_value_pricing') {
-      return `[ VBP_REPORT ]: Analysis complete. Identified economic value surplus for ${args.context}. Suggested Pricing: 15% of revenue.`;
-    }
-
-    return `[ SOVEREIGN_TUNNEL ]: ${name} executed autonomously within gateway parameters.`;
-  }
-
-  sendVideoFrame(base64Data: string) {
-    this.sessionPromise?.then((session) => {
-      session.sendRealtimeInput({ media: { data: base64Data, mimeType: 'image/jpeg' } });
-    });
   }
 
   async processMultimodal(text: string, files: FilePart[]): Promise<string> {
@@ -279,22 +152,15 @@ export class AlluciGeminiService {
       config
     });
 
-    let depth = 0;
-    while (response.candidates?.[0]?.content?.parts?.some(p => p.functionCall) && depth < 5) {
-      const part = response.candidates[0].content.parts.find(p => p.functionCall);
-      if (!part || !part.functionCall) break;
-      const fc = part.functionCall;
-      const result = this.simulateToolExecution(fc.name, fc.args);
-      this.audit.addEntry("MULTIMODAL_AUTO_EXEC", { tool: fc.name });
-      currentContents.push({ role: 'model', parts: [{ functionCall: fc }] });
-      currentContents.push({ role: 'user', parts: [{ functionResponse: { name: fc.name, response: { result } } }] });
-      response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: currentContents,
-        config
-      });
-      depth++;
+    // If tool call suggested, route to production backend
+    if (response.candidates?.[0]?.content?.parts?.some(p => p.functionCall)) {
+        const fc = response.candidates[0].content.parts.find(p => p.functionCall)?.functionCall;
+        if (fc) {
+            const result = await this.callBackendTool(fc.name, fc.args);
+            return result;
+        }
     }
+
     return response.text || "[ SIGNAL_LOST ]";
   }
 
