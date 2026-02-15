@@ -13,8 +13,8 @@ import {
 } from './alluciCore';
 import { AuditEntry, PersonalityTraits, Connection, AuthType, SkillManifest, ApiManifoldKeys, AutonomyLevel } from './types';
 
-// [ CONFIGURATION_NODE ]: Replace this with your valid Google Client ID
-const GOOGLE_CLIENT_ID = 'YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com';
+// [ CONFIGURATION_NODE ]
+// In production, load this from import.meta.env.VITE_DAEMON_URL
 const DAEMON_URL = 'http://localhost:8000';
 
 declare global {
@@ -23,18 +23,349 @@ declare global {
   }
 }
 
-// Helper to decode JWT (ID Token) without external libs
-const parseJwt = (token: string) => {
-  try {
-    const base64Url = token.split('.')[1];
-    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-    const jsonPayload = decodeURIComponent(atob(base64).split('').map((c) => {
-      return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
-    }).join(''));
-    return JSON.parse(jsonPayload);
-  } catch (e) {
-    return null;
-  }
+// --- Types for Task Management ---
+interface TaskItem {
+  index: number;
+  description: string;
+  completed: boolean;
+  priority: 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
+  due_date: string | null;
+}
+
+const ExecutionTimeline: React.FC<{ isProcessing: boolean }> = ({ isProcessing }) => {
+  const [step, setStep] = useState(0);
+  
+  useEffect(() => {
+    if (!isProcessing) {
+      setStep(0);
+      return;
+    }
+    const interval = setInterval(() => {
+      setStep(s => (s < 4 ? s + 1 : s));
+    }, 1500); // Simulate progress for the visualizer
+    return () => clearInterval(interval);
+  }, [isProcessing]);
+
+  if (!isProcessing && step === 0) return null;
+
+  const steps = [
+    { label: "PARSING_INTENT", status: step > 0 ? 'COMPLETE' : 'ACTIVE' },
+    { label: "DAG_CONSTRUCTION", status: step > 1 ? 'COMPLETE' : step === 1 ? 'ACTIVE' : 'PENDING' },
+    { label: "SOVEREIGN_EXECUTION", status: step > 2 ? 'COMPLETE' : step === 2 ? 'ACTIVE' : 'PENDING' },
+    { label: "CRITIC_REVIEW", status: step > 3 ? 'COMPLETE' : step === 3 ? 'ACTIVE' : 'PENDING' }
+  ];
+
+  return (
+    <div className="w-full bg-zinc/5 border-y border-sovereign/10 p-2 flex justify-between items-center gap-2 mb-4 animate-in fade-in slide-in-from-top-2">
+      {steps.map((s, i) => (
+        <div key={i} className="flex flex-col items-center flex-1">
+           <div className={`h-1 w-full mb-1 transition-all duration-500 ${s.status === 'COMPLETE' ? 'bg-agent' : s.status === 'ACTIVE' ? 'bg-tension animate-pulse' : 'bg-zinc/20'}`} />
+           <span className={`text-[6px] baunk-style tracking-tighter ${s.status === 'ACTIVE' ? 'text-black' : 'text-zinc opacity-50'}`}>{s.label}</span>
+        </div>
+      ))}
+    </div>
+  );
+};
+
+const ConfirmationModal: React.FC<{
+  isOpen: boolean;
+  title: string;
+  message: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+}> = ({ isOpen, title, message, onConfirm, onCancel }) => {
+  if (!isOpen) return null;
+  return (
+    <div className="fixed inset-0 z-[300] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
+      <div className="facet w-full max-w-sm bg-white p-6 border-2 border-tension shadow-2xl">
+        <h3 className="baunk-style text-[12px] text-tension mb-4 tracking-widest">{title}</h3>
+        <p className="text-[10px] font-mono leading-relaxed mb-6">{message}</p>
+        <div className="flex gap-2">
+          <button onClick={onCancel} className="flex-1 baunk-style text-[9px] py-3 border border-zinc/20 hover:bg-zinc/5">
+            [ CANCEL ]
+          </button>
+          <button onClick={onConfirm} className="flex-1 baunk-style text-[9px] py-3 bg-tension text-white hover:bg-black transition-colors">
+            [ EXECUTE ]
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const TaskPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
+  const [tasks, setTasks] = useState<TaskItem[]>([]);
+  
+  // Filtering States
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'completed'>('all');
+  const [priorityFilter, setPriorityFilter] = useState<string>('ALL');
+  const [timelineFilter, setTimelineFilter] = useState<string>('ALL');
+  
+  // Edit/Add States
+  const [newTaskDesc, setNewTaskDesc] = useState('');
+  const [newTaskPriority, setNewTaskPriority] = useState<'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT'>('MEDIUM');
+  const [newTaskDue, setNewTaskDue] = useState('');
+  const [editingId, setEditingId] = useState<number | null>(null);
+
+  // Safety Confirmation State
+  const [confirmTask, setConfirmTask] = useState<TaskItem | null>(null);
+  const [showToast, setShowToast] = useState(false);
+
+  const fetchTasks = useCallback(async () => {
+    try {
+      const params = new URLSearchParams({
+        status: statusFilter,
+      });
+      if (priorityFilter !== 'ALL') params.append('priority', priorityFilter);
+      if (timelineFilter !== 'ALL') params.append('timeline', timelineFilter);
+
+      const res = await fetch(`${DAEMON_URL}/tasks?${params.toString()}`);
+      if (res.ok) setTasks(await res.json());
+    } catch (e) { console.error(e); }
+  }, [statusFilter, priorityFilter, timelineFilter]);
+
+  useEffect(() => { fetchTasks(); }, [fetchTasks]);
+
+  const handleAddTask = async () => {
+    if (!newTaskDesc.trim()) return;
+    try {
+      await fetch(`${DAEMON_URL}/tasks`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          description: newTaskDesc,
+          completed: false,
+          priority: newTaskPriority,
+          due_date: newTaskDue || null
+        })
+      });
+      setNewTaskDesc('');
+      setNewTaskDue('');
+      setNewTaskPriority('MEDIUM');
+      fetchTasks();
+    } catch (e) { console.error(e); }
+  };
+
+  const executeUpdate = async (task: TaskItem, updates: Partial<TaskItem>) => {
+    try {
+      await fetch(`${DAEMON_URL}/tasks/${task.index}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          description: updates.description ?? task.description,
+          completed: updates.completed ?? task.completed,
+          priority: updates.priority ?? task.priority,
+          due_date: updates.due_date ?? task.due_date
+        })
+      });
+      fetchTasks();
+      if (editingId === task.index) setEditingId(null);
+      
+      // Toast Feedback
+      if (updates.completed) {
+        setShowToast(true);
+        setTimeout(() => setShowToast(false), 3000);
+      }
+    } catch (e) { console.error(e); }
+  };
+
+  const handleToggleComplete = (task: TaskItem) => {
+    if (!task.completed && (task.priority === 'HIGH' || task.priority === 'URGENT')) {
+      setConfirmTask(task);
+    } else {
+      executeUpdate(task, { completed: !task.completed });
+    }
+  };
+
+  const handleDeleteTask = async (index: number) => {
+    try {
+      await fetch(`${DAEMON_URL}/tasks/${index}`, { method: 'DELETE' });
+      fetchTasks();
+    } catch (e) { console.error(e); }
+  };
+
+  const getPriorityColor = (p: string) => {
+    switch (p) {
+      case 'URGENT': return 'text-red-600 bg-red-100 border-red-200';
+      case 'HIGH': return 'text-tension bg-orange-100 border-orange-200';
+      case 'LOW': return 'text-agent bg-green-100 border-green-200';
+      default: return 'text-zinc bg-zinc/5 border-zinc/20';
+    }
+  };
+
+  return (
+    <div className="flex flex-col h-full bg-white relative">
+      <ConfirmationModal 
+        isOpen={!!confirmTask}
+        title="HIGH_PRIORITY_INTERVENTION"
+        message={`You are about to mark a ${confirmTask?.priority} priority task as complete. This action will update the sovereign ledger. Confirm execution?`}
+        onCancel={() => setConfirmTask(null)}
+        onConfirm={() => {
+          if (confirmTask) executeUpdate(confirmTask, { completed: true });
+          setConfirmTask(null);
+        }}
+      />
+      
+      {showToast && (
+        <div className="absolute top-4 right-4 bg-agent text-white text-[9px] baunk-style px-4 py-3 shadow-lg z-50 animate-in slide-in-from-right duration-300">
+          [ TASK_RESOLVED_SUCCESSFULLY ]
+        </div>
+      )}
+
+      {/* Header & Filter Bar */}
+      <div className="flex flex-col border-b border-sovereign/10 pb-6 mb-6 gap-4">
+        <div className="flex justify-between items-center">
+          <h3 className="baunk-style text-xl tracking-[0.3em]">TASK_MANIFOLD_REGISTRY</h3>
+          <button onClick={onClose} className="md:hidden text-lg">✕</button>
+        </div>
+        
+        <div className="flex flex-wrap gap-4 p-4 bg-zinc/5 border border-zinc/10">
+           {/* Status Filter */}
+           <div className="flex flex-col gap-1">
+             <span className="text-[6px] baunk-style opacity-40">STATUS</span>
+             <div className="flex gap-1">
+               {['all', 'active', 'completed'].map(s => (
+                 <button key={s} onClick={() => setStatusFilter(s as any)} className={`px-2 py-1 text-[8px] baunk-style border ${statusFilter === s ? 'bg-sovereign text-white border-sovereign' : 'bg-white text-zinc border-zinc/20'}`}>
+                   {s}
+                 </button>
+               ))}
+             </div>
+           </div>
+
+           {/* Priority Filter */}
+           <div className="flex flex-col gap-1">
+             <span className="text-[6px] baunk-style opacity-40">PRIORITY</span>
+             <select 
+               value={priorityFilter} 
+               onChange={(e) => setPriorityFilter(e.target.value)}
+               className="bg-white border border-zinc/20 text-[9px] font-mono p-1 h-6 outline-none"
+             >
+               <option value="ALL">ALL_LEVELS</option>
+               <option value="URGENT">URGENT</option>
+               <option value="HIGH">HIGH</option>
+               <option value="MEDIUM">MEDIUM</option>
+               <option value="LOW">LOW</option>
+             </select>
+           </div>
+
+           {/* Timeline Filter */}
+           <div className="flex flex-col gap-1">
+             <span className="text-[6px] baunk-style opacity-40">TIMELINE</span>
+             <select 
+               value={timelineFilter} 
+               onChange={(e) => setTimelineFilter(e.target.value)}
+               className="bg-white border border-zinc/20 text-[9px] font-mono p-1 h-6 outline-none"
+             >
+               <option value="ALL">ALL_TIME</option>
+               <option value="TODAY">TODAY</option>
+               <option value="WEEK">THIS_WEEK</option>
+               <option value="OVERDUE">OVERDUE</option>
+             </select>
+           </div>
+        </div>
+      </div>
+
+      {/* Task List */}
+      <div className="flex-1 overflow-y-auto scrollbar-hide space-y-3 mb-6">
+        {tasks.length === 0 && (
+          <div className="text-center py-10 opacity-30 baunk-style text-[10px]">NO_TASKS_IN_VECTOR_SPACE</div>
+        )}
+        {tasks.map((task) => (
+          <div key={task.index} className={`flex items-center gap-4 p-3 border group transition-all duration-300 ${task.completed ? 'bg-zinc/5 border-zinc/10 opacity-60' : 'bg-white border-sovereign/10 hover:border-sovereign shadow-sm hover:shadow-md'}`}>
+            <input 
+              type="checkbox" 
+              checked={task.completed} 
+              onChange={() => handleToggleComplete(task)}
+              className="accent-sovereign w-4 h-4 cursor-pointer"
+            />
+            
+            <div className="flex-1 flex flex-col gap-1">
+              {editingId === task.index ? (
+                <input 
+                  autoFocus
+                  className="w-full text-[10px] font-mono border-b border-sovereign outline-none bg-transparent"
+                  defaultValue={task.description}
+                  onBlur={(e) => executeUpdate(task, { description: e.target.value })}
+                  onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+                />
+              ) : (
+                 <span 
+                   onClick={() => setEditingId(task.index)}
+                   className={`text-[10px] font-mono cursor-text ${task.completed ? 'line-through' : ''}`}
+                 >
+                   {task.description}
+                 </span>
+              )}
+              
+              <div className="flex gap-2 items-center">
+                 <span className={`text-[6px] baunk-style px-1.5 py-0.5 border ${getPriorityColor(task.priority)}`}>
+                   {task.priority}
+                 </span>
+                 {task.due_date && (
+                   <span className={`text-[7px] font-mono opacity-60 ${new Date(task.due_date) < new Date() && !task.completed ? 'text-red-500 font-bold' : ''}`}>
+                     DUE: {task.due_date}
+                   </span>
+                 )}
+              </div>
+            </div>
+
+            <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity items-center">
+               <select 
+                 value={task.priority}
+                 onChange={(e) => executeUpdate(task, { priority: e.target.value as any })}
+                 className="text-[8px] bg-transparent border border-zinc/20 outline-none cursor-pointer p-1"
+               >
+                 <option value="LOW">LOW</option>
+                 <option value="MEDIUM">MED</option>
+                 <option value="HIGH">HIGH</option>
+                 <option value="URGENT">URG</option>
+               </select>
+               <input 
+                 type="date"
+                 className="text-[8px] bg-transparent border border-zinc/20 outline-none w-24 p-1"
+                 value={task.due_date || ''}
+                 onChange={(e) => executeUpdate(task, { due_date: e.target.value })}
+               />
+               <button onClick={() => handleDeleteTask(task.index)} className="text-red-400 hover:text-red-600 font-bold px-2">✕</button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Add Task Form */}
+      <div className="p-4 bg-zinc/5 border border-sovereign/10 flex gap-3 items-center shadow-inner">
+         <select 
+           value={newTaskPriority} 
+           onChange={(e) => setNewTaskPriority(e.target.value as any)}
+           className="bg-white border border-zinc/20 text-[9px] font-mono p-2 outline-none h-10 w-20"
+         >
+           <option value="LOW">LOW</option>
+           <option value="MEDIUM">MED</option>
+           <option value="HIGH">HIGH</option>
+           <option value="URGENT">URG</option>
+         </select>
+         <input 
+           value={newTaskDesc}
+           onChange={(e) => setNewTaskDesc(e.target.value)}
+           onKeyDown={(e) => e.key === 'Enter' && handleAddTask()}
+           placeholder="NEW_OBJECTIVE_VECTOR..." 
+           className="flex-1 bg-white border border-zinc/20 text-[10px] font-mono p-2 outline-none h-10"
+         />
+         <input 
+           type="date"
+           value={newTaskDue}
+           onChange={(e) => setNewTaskDue(e.target.value)}
+           className="bg-white border border-zinc/20 text-[9px] font-mono p-2 outline-none h-10 w-28"
+         />
+         <button 
+           onClick={handleAddTask}
+           className="bg-sovereign text-white baunk-style text-[9px] px-6 h-10 hover:bg-agent transition-colors"
+         >
+           [ ADD ]
+         </button>
+      </div>
+    </div>
+  );
 };
 
 const AuthPortal: React.FC<{ 
@@ -245,11 +576,34 @@ const MobileMenu: React.FC<{ isOpen: boolean; onClose: () => void; onAction: (ac
        <div className="flex flex-col gap-3 text-center overflow-y-auto">
           <button onClick={() => onAction('audit')} className="alce-button baunk-style text-xs py-4 border-b border-zinc/10">[ AUDIT_LOG ]</button>
           <button onClick={() => onAction('files')} className="alce-button baunk-style text-xs py-4 border-b border-zinc/10">[ FILES ]</button>
+          <button onClick={() => onAction('tasks')} className="alce-button baunk-style text-xs py-4 border-b border-zinc/10">[ TASKS ]</button>
           <button onClick={() => onAction('skills')} className="alce-button baunk-style text-xs py-4 border-b border-zinc/10">[ SKILLS ]</button>
           <button onClick={() => onAction('bridges')} className="alce-button baunk-style text-xs py-4 border-b border-zinc/10">[ BRIDGES ]</button>
           <button onClick={() => onAction('api')} className="alce-button baunk-style text-xs py-4 border-b border-zinc/10">[ API_KEYS ]</button>
           <button onClick={() => onAction('soul')} className="alce-button baunk-style text-xs py-4">[ SOUL_CORE ]</button>
        </div>
+    </div>
+  );
+};
+
+const HeartbeatIndicator: React.FC<{ active: boolean }> = ({ active }) => {
+  // Simulates a heartbeat pulse visualizer
+  const [pulse, setPulse] = useState(false);
+  useEffect(() => {
+    if(!active) return;
+    const interval = setInterval(() => {
+      setPulse(true);
+      setTimeout(() => setPulse(false), 200);
+    }, 2000);
+    return () => clearInterval(interval);
+  }, [active]);
+
+  if (!active) return null;
+
+  return (
+    <div className="flex items-center gap-1 opacity-60">
+      <div className={`w-1.5 h-1.5 bg-tension rounded-full transition-all duration-300 ${pulse ? 'scale-150 shadow-[0_0_8px_#FF7D00]' : 'scale-100'}`} />
+      <span className="text-[6px] font-mono tracking-wider">HEARTBEAT_ACTIVE</span>
     </div>
   );
 };
@@ -270,6 +624,7 @@ const App: React.FC = () => {
   const [isPreferencesOpen, setIsPreferencesOpen] = useState(false);
   const [isSoulOpen, setIsSoulOpen] = useState(false);
   const [isApiManifoldOpen, setIsApiManifoldOpen] = useState(false);
+  const [isTaskPanelOpen, setIsTaskPanelOpen] = useState(false);
   
   const [activeAuth, setActiveAuth] = useState<Connection | null>(null);
   const [selectedSkill, setSelectedSkill] = useState<SkillManifest | null>(null);
@@ -290,6 +645,11 @@ const App: React.FC = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [audioStream, setAudioStream] = useState<MediaStream | null>(null);
   const [auditLog, setAuditLog] = useState<AuditEntry[]>([]);
+
+  // Auth State for API Manifold
+  const [masterKeyInput, setMasterKeyInput] = useState("");
+  const [isAuthenticating, setIsAuthenticating] = useState(false);
+  const [authStatus, setAuthStatus] = useState<string | null>(null);
 
   const [personality, setPersonality] = useState<PersonalityTraits>({
     satireLevel: 0.5,
@@ -498,6 +858,30 @@ const App: React.FC = () => {
     setActiveAuth(null);
   };
 
+  const handleDaemonLogin = async () => {
+    setIsAuthenticating(true);
+    setAuthStatus(null);
+    try {
+        const res = await fetch(`${DAEMON_URL}/auth/login`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ key: masterKeyInput })
+        });
+        if (res.ok) {
+            const data = await res.json();
+            localStorage.setItem('alluci_daemon_token', data.access_token);
+            setAuthStatus("SUCCESS: Sovereign Token Stored.");
+            setMasterKeyInput("");
+        } else {
+            setAuthStatus("FAILURE: Invalid Key.");
+        }
+    } catch (e) {
+        setAuthStatus("ERROR: Daemon Unreachable.");
+    } finally {
+        setIsAuthenticating(false);
+    }
+  };
+
   const toggleCamera = async () => {
     if (isCameraActive) {
       setIsCameraActive(false);
@@ -586,6 +970,7 @@ const App: React.FC = () => {
     switch(action) {
       case 'audit': setIsAuditOpen(true); refreshAuditLog(); break;
       case 'files': setIsDriveOpen(true); break;
+      case 'tasks': setIsTaskPanelOpen(true); break;
       case 'skills': setIsSettingsOpen(true); break;
       case 'bridges': setIsPreferencesOpen(true); break;
       case 'api': setIsApiManifoldOpen(true); break;
@@ -626,6 +1011,10 @@ const App: React.FC = () => {
              <h1 className="baunk-style text-[9px] md:text-[10px] tracking-[0.2em] md:tracking-[0.4em]">[ POLYTOPE ] v4.3</h1>
              <span className="text-[6px] font-mono opacity-30 uppercase tracking-tighter hidden md:block">Autonomous_Executive_Manifold</span>
            </div>
+           {/* Heartbeat Status */}
+           <div className="ml-4 hidden md:block">
+             <HeartbeatIndicator active={daemonStatus === 'ONLINE'} />
+           </div>
         </div>
         
         {/* Desktop Controls */}
@@ -638,6 +1027,7 @@ const App: React.FC = () => {
           </div>
           <button onClick={() => { setIsAuditOpen(true); refreshAuditLog(); }} className="alce-button text-[8px] baunk-style hidden lg:block">[ AUDIT ]</button>
           <button onClick={() => setIsDriveOpen(!isDriveOpen)} className="alce-button text-[8px] baunk-style hidden lg:block">[ FILES ]</button>
+          <button onClick={() => setIsTaskPanelOpen(true)} className="alce-button text-[8px] baunk-style">[ TASKS ]</button>
           <button onClick={() => setIsSettingsOpen(!isSettingsOpen)} className="alce-button text-[8px] baunk-style">[ SKILLS ]</button>
           <button onClick={() => setIsPreferencesOpen(true)} className="alce-button text-[8px] baunk-style">[ BRIDGES ]</button>
           <button onClick={() => setIsApiManifoldOpen(true)} className="alce-button text-[8px] baunk-style">[ API ]</button>
@@ -649,6 +1039,7 @@ const App: React.FC = () => {
 
         {/* Mobile Controls */}
         <div className="flex md:hidden items-center gap-3">
+          <HeartbeatIndicator active={daemonStatus === 'ONLINE'} />
           <button onClick={handleConnect} className={`alce-button text-[8px] baunk-style px-3 py-1.5 ${isConnected ? 'text-tension' : 'text-agent'}`}>
              {isConnected ? '[ SLEEP ]' : '[ AWAKEN ]'}
           </button>
@@ -693,6 +1084,7 @@ const App: React.FC = () => {
       {/* Main / Terminal Tab */}
       <main className={`md:col-span-6 facet relative md:border-none flex flex-col min-h-0 ${mobileView === 'terminal' ? 'flex-1' : 'hidden md:flex'}`}>
         <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-4 md:p-8 flex flex-col gap-6 md:gap-8 scrollbar-hide bg-white">
+          <ExecutionTimeline isProcessing={isProcessing} />
           {transcriptions.length === 0 && (
             <div className="h-full flex flex-col items-center justify-center opacity-5 select-none animate-pulse">
               <PolytopeIdentity color="#000" size={100} />
@@ -773,21 +1165,55 @@ const App: React.FC = () => {
       </footer>
 
       {/* Unified Modal Layer - Responsive */}
-      {(isAuditOpen || isPreferencesOpen || isSettingsOpen || isDriveOpen || isSoulOpen || isApiManifoldOpen) && (
+      {(isAuditOpen || isPreferencesOpen || isSettingsOpen || isDriveOpen || isSoulOpen || isApiManifoldOpen || isTaskPanelOpen) && (
         <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm p-0 md:p-6 flex items-end md:items-center justify-center animate-in fade-in duration-300">
            <div className="facet w-full h-[100dvh] md:h-[90vh] md:w-full md:max-w-6xl bg-white shadow-2xl flex flex-col border-t-2 md:border-2 border-sovereign overflow-hidden animate-in slide-in-from-bottom-10 md:zoom-in-95 relative">
               <header className="p-4 md:p-8 border-b border-sovereign flex justify-between items-center bg-white z-[120]">
                  <div className="flex flex-col">
                    <h2 className="baunk-style text-xs md:text-lg tracking-[0.2em] md:tracking-[0.5em] truncate max-w-[200px] md:max-w-none">
-                     {isAuditOpen ? 'EXECUTIVE_LEDGER' : isSettingsOpen ? 'SKILL_MANIFEST' : isPreferencesOpen ? 'BRIDGE_DIRECTORY' : isDriveOpen ? 'FILE_MANIFOLD' : isSoulOpen ? 'SOUL_PREFERENCES' : isApiManifoldOpen ? 'API_MANIFOLD_PREFERENCES' : ''}
+                     {isAuditOpen ? 'EXECUTIVE_LEDGER' : isSettingsOpen ? 'SKILL_MANIFEST' : isPreferencesOpen ? 'BRIDGE_DIRECTORY' : isDriveOpen ? 'FILE_MANIFOLD' : isSoulOpen ? 'SOUL_PREFERENCES' : isApiManifoldOpen ? 'API_MANIFOLD_PREFERENCES' : isTaskPanelOpen ? 'TASK_MANIFOLD' : ''}
                    </h2>
                    <span className="text-[6px] md:text-[8px] font-mono opacity-30 uppercase mt-1">Sovereign_Protocol_v4.3_Active</span>
                  </div>
-                 <button onClick={() => { setIsAuditOpen(false); setIsPreferencesOpen(false); setIsSettingsOpen(false); setIsDriveOpen(false); setIsSoulOpen(false); setIsApiManifoldOpen(false); setSelectedSkill(null); }} className="alce-button baunk-style text-[9px] md:text-[10px] hover:bg-tension px-4 md:px-10 py-2">[ EXIT ]</button>
+                 <button onClick={() => { setIsAuditOpen(false); setIsPreferencesOpen(false); setIsSettingsOpen(false); setIsDriveOpen(false); setIsSoulOpen(false); setIsApiManifoldOpen(false); setIsTaskPanelOpen(false); setSelectedSkill(null); }} className="alce-button baunk-style text-[9px] md:text-[10px] hover:bg-tension px-4 md:px-10 py-2">[ EXIT ]</button>
               </header>
               <div className="flex-1 overflow-y-auto p-4 md:p-10 scrollbar-hide relative">
-                 {isApiManifoldOpen ? (
+                 {isTaskPanelOpen ? (
+                    <TaskPanel onClose={() => setIsTaskPanelOpen(false)} />
+                 ) : isApiManifoldOpen ? (
                     <div className="flex flex-col gap-12 pb-20">
+                      
+                      {/* NEW: DAEMON ACCESS SECTION */}
+                      <div className="p-6 bg-sovereign/5 border border-sovereign/20 mb-8">
+                         <h3 className="baunk-style text-[10px] text-black border-b border-black/10 pb-2 mb-4">0. DAEMON_ACCESS_CONTROL</h3>
+                         <div className="space-y-4">
+                            <p className="text-[9px] font-mono opacity-60">
+                               Authenticate with your Sovereign Master Key to enable autonomous objective execution.
+                            </p>
+                            <div className="flex gap-2">
+                               <input 
+                                  type="password" 
+                                  value={masterKeyInput}
+                                  onChange={(e) => setMasterKeyInput(e.target.value)}
+                                  placeholder="ENTER_SOVEREIGN_MASTER_KEY..."
+                                  className="flex-1 bg-white border border-zinc/20 p-2 text-[9px] font-mono focus:border-black outline-none"
+                               />
+                               <button 
+                                 onClick={handleDaemonLogin}
+                                 disabled={isAuthenticating}
+                                 className="alce-button baunk-style text-[9px] bg-black text-white hover:bg-zinc-800 disabled:opacity-50"
+                               >
+                                  {isAuthenticating ? '[ VERIFYING... ]' : '[ AUTHENTICATE ]'}
+                               </button>
+                            </div>
+                            {authStatus && (
+                                <div className={`text-[8px] font-mono font-bold tracking-wider ${authStatus.includes('SUCCESS') ? 'text-agent' : 'text-tension'}`}>
+                                    {authStatus}
+                                </div>
+                            )}
+                         </div>
+                      </div>
+
                       <div className="p-6 bg-agent/5 border border-agent/20 text-[10px] font-mono leading-relaxed mb-6">
                         <p className="font-bold text-agent mb-2 uppercase tracking-[0.2em]">Security Protocol Awareness:</p>
                         <p>All API keys entered here are stored within your local Sovereign Manifold (localStorage). They grant Alluci autonomous reach into your subscription silos for Text Reasoning, Audio, Music, Image, and Video synthesis. Ensure your project environments are secure.</p>
@@ -1060,7 +1486,7 @@ const App: React.FC = () => {
                  ) : null}
               </div>
 
-              {/* Skill Detail Popup - Anchored smaller centered window */}
+              {/* Skill Detail Popup */}
               {selectedSkill && (
                 <div className="absolute top-0 md:top-24 left-0 md:left-1/2 md:-translate-x-1/2 z-[150] w-full h-full md:h-auto md:w-[90%] max-w-2xl md:max-h-[75vh] bg-white border-2 border-sovereign shadow-[0_20px_60px_rgba(0,0,0,0.3)] flex flex-col animate-in slide-in-from-top-10 duration-500">
                   <header className="p-6 border-b border-sovereign flex justify-between items-center bg-white shrink-0">

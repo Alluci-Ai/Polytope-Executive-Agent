@@ -132,12 +132,23 @@ export class AlluciGeminiService {
           objective: args.objective || JSON.stringify(args),
           autonomy_level: autonomyLevel
       };
+
+      const token = localStorage.getItem('alluci_daemon_token');
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
       
       const response = await fetch(`${this.DAEMON_URL}/objective/execute`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: headers,
         body: JSON.stringify(payload),
       });
+
+      if (response.status === 401) {
+          return "[ ERROR ]: UNAUTHORIZED. Please authenticate via the API Manifold.";
+      }
+
       const data = await response.json();
       return JSON.stringify(data.result);
     } catch (e) {

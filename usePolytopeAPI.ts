@@ -9,11 +9,22 @@ export const usePolytopeAPI = () => {
   const executeObjective = useCallback(async (objective: string) => {
     setIsBusy(true);
     try {
+      const token = localStorage.getItem('alluci_daemon_token');
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
       const response = await fetch(`${DAEMON_URL}/objective/execute`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: headers,
         body: JSON.stringify({ objective }),
       });
+      
+      if (response.status === 401) {
+        return "[ ERROR ]: Access Denied. Daemon token invalid or expired.";
+      }
+      
       const data = await response.json();
       return data.result;
     } catch (error) {

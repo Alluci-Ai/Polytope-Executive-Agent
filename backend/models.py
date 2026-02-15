@@ -8,6 +8,17 @@ class TaskStatus(str, Enum):
     RUNNING = "running"
     COMPLETED = "completed"
     FAILED = "failed"
+    CRITIQUED_RETRY = "critiqued_retry"
+
+class PlanStep(BaseModel):
+    id: str
+    description: str
+    tool: str
+    dependencies: List[str] = []
+
+class ExecutionPlan(BaseModel):
+    objective: str
+    steps: List[PlanStep]
 
 class DAGTask(BaseModel):
     id: str
@@ -16,6 +27,8 @@ class DAGTask(BaseModel):
     dependencies: List[str] = []
     status: TaskStatus = TaskStatus.PENDING
     result: Optional[Any] = None
+    retry_count: int = 0
+    logs: List[str] = []
 
 class ObjectiveRequest(BaseModel):
     objective: str
@@ -33,3 +46,32 @@ class SystemStatus(BaseModel):
     thermal_status: str
     active_bridges: List[str]
     vault_integrity: bool
+    daemon_version: str = "4.5.1"
+
+class CriticResult(BaseModel):
+    score: float  # 0.0 to 1.0
+    feedback: str
+    passed: bool
+
+class LoginRequest(BaseModel):
+    key: str
+
+class TaskPriority(str, Enum):
+    LOW = "LOW"
+    MEDIUM = "MEDIUM"
+    HIGH = "HIGH"
+    URGENT = "URGENT"
+
+class TaskItem(BaseModel):
+    index: int
+    raw_line: str
+    description: str
+    completed: bool
+    priority: TaskPriority
+    due_date: Optional[str] = None # YYYY-MM-DD
+
+class TaskUpdate(BaseModel):
+    description: str
+    completed: bool
+    priority: TaskPriority
+    due_date: Optional[str] = None
