@@ -8,7 +8,8 @@
     <img src="https://img.shields.io/badge/Logic-Harmonic_Lattice-orange" alt="Harmonic Logic" />
     <img src="https://img.shields.io/badge/Security-Simplicial_Vaults-red" alt="Security" />
     <img src="https://img.shields.io/badge/Runtime-Alluci_Sovereign_Gateway-purple" alt="Sovereign Gateway" />
-    <img src="https://img.shields.io/badge/Affective Computing-Alluci_ACE_Engine-blue" alt="Sovereign Gateway" />
+    <img src="https://img.shields.io/badge/Affective_Computing-Alluci_ACE_Engine-blue" alt="Sovereign Gateway" />
+    <img src="https://img.shields.io/badge/Autonomous_Multi_Agent-Polytope_Executive_Orchestration_Engine-pink" alt="Sovereign Gateway" />
   </p>
 </div>
 
