@@ -28,7 +28,7 @@
 
 <div id="simplicial-vault">
   <h2>The Simplicial Vault</h2>
-  <p>The Simplicial Vault is the core architectural primitive for security and isolation within the Alluci-Polytope ecosystem. Unlike flat security models, it treats every connection, data source, and agent session as a cryptographically isolated node.</p>
+  <p>The Simplicial Vault is the core architectural primitive for security and isolation within the Alluci-Polytope ecosystem. Unlike flat security models, it treats every connection, data source, and agent session as a cryptographically secured node.</p>
   
   <div style="margin-left: 20px;">
     <h4>Isolated Execution Containers</h4>
