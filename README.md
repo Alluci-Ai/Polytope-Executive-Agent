@@ -183,7 +183,7 @@
   <h3>Hardware & Safety</h3>
   <ul>
     <li><strong>Apple Silicon:</strong> Optimized for local inference via MPS and hardware-accelerated ACE logic.</li>
-    <li><strong>Privacy Policy:</strong> Strict Isolation Protocol—Biometric data and Vault keys never leave local hardware.</li>
+    <li><strong>Privacy Policy:</strong> Strict Isolation Protocol—Data and Vault keys never leave local hardware.</li>
   </ul>
   <p align="center"><em>"Alluci-Polytope: Turning AI from a passive tool into a sovereign, affective partner."</em></p>
 </div>
