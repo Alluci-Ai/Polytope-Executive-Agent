@@ -1,380 +1,189 @@
-High-priority (P0) immediate fixes — do these first (order matters)
-
-Secrets sweep & rotate
-
-Run locally and in CI immediately:
-
-gitleaks detect --source . --report-path gitleaks-report.json || true
-
-
-Expected: gitleaks-report.json created. If any findings, remove secrets, then run:
-
-# Remove secret from history (example using git filter-repo)
-git filter-repo --path <file-with-secret> --invert-paths
-# then force-push to protected branch only after rotating keys
-git push --force origin main
-
-
-Rotate any exposed API keys, private keys, tokens immediately in providers.
-
-Replace insecure RNG & hashing
-
-Files to update (inferred): src/alluciCore.ts, src/utils/crypto.ts (create if missing).
-
-Unsafe examples to replace:
-
-// unsafe (replace immediately)
-const entropy = Math.random().toString(36).slice(2);
-const hash = btoa(JSON.stringify(payload)).substr(0, 16);
-
-
-Replace with Node + Browser CSPRNG + SHA-256:
-
-// Node (use in server/runtime code)
-import { randomBytes, createHash } from 'crypto';
-export function csprngHex(bytes = 32) {
-  return randomBytes(bytes).toString('hex'); // 64 hex chars for 32 bytes
-}
-export function sha256Hex(input: string) {
-  return createHash('sha256').update(input, 'utf8').digest('hex'); // 64 hex
-}
-
-// Browser (use in client code)
-export function csprngHexBrowser(bytes = 32) {
-  const arr = new Uint8Array(bytes);
-  crypto.getRandomValues(arr);
-  return Array.from(arr).map(b => b.toString(16).padStart(2,'0')).join('');
-}
-export async function sha256HexBrowser(message) {
-  const msgUint8 = new TextEncoder().encode(message);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', msgUint8);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map(b => b.toString(16).padStart(2,'0')).join('');
-}
-
-
-Replace all uses of Math.random() and btoa(...).substr(...) with these helpers.
-
-Verification: add unit test asserting sha256Hex(...) returns 64-char hex.
-
-Replace simulated Verus signing with signed flow (testnet)
-
-Files to update (inferred): src/bridgeManager.ts, src/verus/commitProfileHashToVerus.ts (create).
-
-Do not accept simulated signature logic. Implement signing via:
-
-A signing service / hardware signer (e.g., OS keystore, mobile Verus Vault) that signs a canonical payload.
-
-Submit signed transaction to Verus RPC or SDK; record only txid and metadata locally.
-
-Example flow (pseudo):
-
-Create canonical VDXF object: JSON canonicalized (sorted keys).
-
-Compute SHA-256 hex digest of canonical JSON.
-
-Ask user device to sign digest with VerusID private key via secure signer (never expose private key).
-
-Submit signed proof / object to Verus RPC sendrawtransaction or SDK equivalent.
-
-Store returned txid only in local audit ledger.
-
-JSON-RPC sample (post-sign):
-
-// Example: submit a signed tx (fill with real signed hex)
-{
-  "jsonrpc":"1.0",
-  "id":"commitProfile",
-  "method":"sendrawtransaction",
-  "params":["0200000001...<signed raw tx hex>..."]
-}
-
-
-If no signer available in environment, fail the operation and return a clear error (fail-closed).
-
-Enforce Bio-Vault privacy: never upload raw biometrics
-
-Insert programmatic guard where telemetry export happens (inferred paths: src/ace/telemetry.*):
-
-// Pseudo-check before any outbound transfer
-function ensureTokenizedOnly(payload) {
-  if (payload.rawBiometrics && payload.rawBiometrics.length > 0) {
-    throw new Error('RAW_BIOMETRICS_UPLOAD_FORBIDDEN: use tokenized state tokens only');
-  }
-}
-
-
-Add unit test that attempts to upload raw HR rows (CSV) and asserts the API rejects it.
-
-Add pre-commit hooks & CI secret scanning
-
-Add .husky/pre-commit or use pre-commit:
-
-# .husky/pre-commit
-npx gitleaks detect --source . --exit-code || (echo "Secrets found. Abort." && exit 1)
-npm run lint
-npm test
-
-
-Add SECURITY.md to repo (see docs later).
-
-Role-based actionable checklist (what each persona must do)
-
-Do these as separate PRs or small atomic commits; mark P0 fixes first.
-
-1) AI/ML Systems Architect
-
-Tasks:
-
-Create models/MODEL_CARD.md and models/manifest.json listing model names, versions, hashes.
-
-Add tests/ace/privacy.test.ts that ensures telemetry writes never include raw biometrics (see Test section below).
-
-Add model artifact verification: compute SHA-256 of model files and verify on load.
-
-Commands:
-
-mkdir -p models
-echo '{}' > models/manifest.json
-git add models && git commit -m "chore(models): add model manifest placeholder"
-
-
-Files to edit: src/ace/loadModel.ts (ensure manifest verification).
-
-2) Senior Full-Stack Developer
-
-Tasks:
-
-Audit client uses of crypto window.crypto vs Node crypto; guard code with if (typeof window !== 'undefined').
-
-Add openapi.yaml describing bridge endpoints.
-
-Ensure no API keys are embedded in client bundles.
-
-Commands:
-
-npx depcheck || true
-npx eslint "src/**" --ext .ts,.tsx
-
-
-Files: src/client/*, src/api/openapi.yaml.
-
-3) Lead Back-End Developer
-
-Tasks:
-
-Implement src/verus/commitProfileHashToVerus.ts with a testnet flow using a secure signer abstraction.
-
-Replace all simulated rotate_keys() placeholders with atomic operations using CSPRNG to generate new key material (store only encrypted blobs).
-
-Add DB migrations for vault metadata and audit ledger (encrypted columns).
-
-Commands:
-
-mkdir -p src/verus
-# create migration
-npx knex migrate:make add_vault_metadata || true
-
-
-Files: src/bridgeManager.ts, src/verus/*, migrations/*.
-
-4) Lead UI/UX Developer
-
-Tasks:
-
-Implement a consent modal for biometric collection at src/components/BioConsentModal.tsx.
-
-Add a Privacy Dashboard src/pages/privacy.tsx showing vaults, last rotation time, txids.
-
-Add accessible indicators for Voice Wake (visible badge + keyboard toggle).
-
-Files: src/components/*, src/pages/privacy.tsx.
-
-5) Senior Verus Developer
-
-Tasks:
-
-Implement canonical VDXF object creation and signing abstraction src/verus/vdxf.ts.
-
-Add testnet CI tests that call mocked Verus RPC (or run local testnet).
-
-Ensure no PII is included in on-chain commitments (store only hashes).
-
-Commands:
-
-npm i --save verus-sdk || true
-# or if using RPC mock:
-npm i --save-dev nock
-
-
-Files: src/verus/*, tests/verus.test.ts.
-
-Exact code snippets (copy/paste) — CSPRNG + SHA256 helpers
-
-Create src/utils/crypto.ts and import across codebase.
-
-Node (src/utils/crypto.ts):
-
-import { randomBytes, createHash } from 'crypto';
-
-export function csprngHex(bytes = 32): string {
-  return randomBytes(bytes).toString('hex'); // 64 hex chars for 32 bytes
-}
-
-export function sha256Hex(input: string): string {
-  return createHash('sha256').update(input, 'utf8').digest('hex'); // 64 hex
-}
-
-
-Browser (src/utils/crypto.browser.ts):
-
-export function csprngHexBrowser(bytes = 32) {
-  const arr = new Uint8Array(bytes);
-  crypto.getRandomValues(arr);
-  return Array.from(arr).map(b => b.toString(16).padStart(2,'0')).join('');
-}
-
-export async function sha256HexBrowser(message) {
-  const msgUint8 = new TextEncoder().encode(message);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', msgUint8);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map(b => b.toString(16).padStart(2,'0')).join('');
-}
-
-Verus signing flow (secure, testnet example)
-
-Build canonical object:
-
-import { sha256Hex } from '../utils/crypto';
-function canonicalize(obj: any) {
-  return JSON.stringify(sortKeys(obj)); // implement stable sortKeys
-}
-const canonical = canonicalize(vdxfObj);
-const digest = sha256Hex(canonical);
-
-
-Sign digest on-device via secure signer (Example API interface):
-
-// Abstraction: signer.signDigest(digest) -> promise<string> (DER hex signature)
-const signatureHex = await signer.signDigest(digest); // implemented by device/HSM
-
-
-Submit signed data to Verus RPC:
-
-// JSON-RPC example
-POST / RPC endpoint with body:
-{
-  "jsonrpc":"1.0",
-  "id":"1",
-  "method":"sendrawtransaction",
-  "params":["<signed_raw_tx_hex>"]
-}
-
-
-Store only txid locally. Reject if signer not present (fail-closed).
-
-CI & Automation — commands & workflow
-
-Local checks to run:
-
-npm ci
-npx tsc --noEmit
-npx eslint "src/**" --ext .ts,.tsx
-npm test
-gitleaks detect --source . --report-path gitleaks-report.json || true
-npm audit --production --json > npm-audit.json || true
-
-
-Add .github/workflows/audit-and-tests.yml (high level):
-
-On PR: install deps, run tsc, eslint, npm test, gitleaks detect (fail on leaks), npm audit (warn/fail based on threshold).
-
-Tests (unit & contract checks)
-
-Add tests under tests/ using Jest or Mocha. Example tests:
-
-No Math.random() crypto usage (scan test pseudo-code):
-
-// tests/crypto-scan.test.ts
-import fs from 'fs';
-const files = fs.readdirSync('src').flatMap(f => fs.readFileSync(`src/${f}`, 'utf8'));
-test('no Math.random used for crypto', () => {
-  const found = files.some(c => c.includes('Math.random('));
-  expect(found).toBe(false);
-});
-
-
-Audit hash format test:
-
-// tests/sha.test.ts
-import { sha256Hex } from '../src/utils/crypto';
-test('sha256Hex returns 64 hex chars', () => {
-  const h = sha256Hex('test');
-  expect(h).toMatch(/^[a-f0-9]{64}$/);
-});
-
-
-No raw biometric upload test:
-
-// tests/privacy.test.ts
-import { validateUploadPayload } from '../src/ace/telemetry';
-test('reject raw biometric uploads', () => {
-  const payload = { rawBiometrics: [{ hr: 72, hrv: 34 }] };
-  expect(() => validateUploadPayload(payload)).toThrow(/RAW_BIOMETRICS_UPLOAD_FORBIDDEN/);
-});
-
-Quick PR/change guidelines & commit messages (examples)
-
-Commit message for RNG/hashing:
-
-fix(security): replace Math.random/btoa with CSPRNG + SHA256 helpers
-
-
-Commit message for Verus:
-
-feat(verus): implement canonical VDXF signing flow (testnet signer abstraction)
-
-
-Commit message for privacy:
-
-fix(privacy): block raw biometric uploads; add tokenization guard + tests
-
-Minimal file manifest of changes to create
-
-src/utils/crypto.ts — code (CSPRNG + SHA256)
-
-src/utils/crypto.browser.ts — code (browser equivalents)
-
-src/verus/commitProfileHashToVerus.ts — code (VDXF canonicalization + signer abstraction)
-
-src/ace/telemetry.ts — code (validateUploadPayload)
-
-tests/crypto-scan.test.ts, tests/sha.test.ts, tests/privacy.test.ts — tests
-
-.husky/pre-commit or pre-commit-config.yaml — pre-commit hook
-
-.github/workflows/audit-and-tests.yml — CI workflow
-
-SECURITY.md, PRIVACY.md, MODEL_CARD.md — docs
-
-Verification checklist (run after changes)
-
-Run unit tests:
-
-npm test
-
-
-Run static checks:
-
-npx tsc --noEmit && npx eslint "src/**"
-
-
-Run secrets scan:
-
-gitleaks detect --source . --report-path gitleaks-report.json
-[[should be clean]]
-
-
-Attempt an upload of a raw biometrics payload — expect rejection error.
-
-Attempt Verus commit without signer — expect clear error (fail-closed).
+<div align="center">
+  <h1>Alluci-Polytope Executive Assistant</h1>
+  <h3>Under Development — Coming Soon</h3>
+  <p><strong>The Self-Sovereign Personal/Professional AI Assistant</strong></p>
+  
+  <p align="center">
+    <img src="https://img.shields.io/badge/Identity-VerusID_Sovereign-green" alt="VerusID" />
+    <img src="https://img.shields.io/badge/Logic-Harmonic_Lattice-orange" alt="Harmonic Logic" />
+    <img src="https://img.shields.io/badge/Security-Simplicial_Vaults-red" alt="Security" />
+    <img src="https://img.shields.io/badge/Runtime-Alluci_Sovereign_Gateway-purple" alt="Sovereign Gateway" />
+    <img src="https://img.shields.io/badge/Affective_Computing-Alluci_ACE_Engine-blue" alt="Sovereign Gateway" />
+    <img src="https://img.shields.io/badge/Autonomous_Multi_Agent-Polytope_Executive_Orchestration_Engine-pink" alt="Sovereign Gateway" />
+    <img src="https://img.shields.io/badge/Multi_Media_Synthesis-Polytope_Gateway_Engine-lavender" alt="Sovereign Gateway" />
+  </p>
+  </p>
+</div>
+
+---
+
+<div id="mission" style="padding: 20px; border-radius: 15px; background-color: #f8fafc; border: 1px solid #e2e8f0;">
+  <h2>Executive Intelligence</h2>
+  <p>
+    The <strong>Alluci-Polytope Executive Assistant</strong> is a self-sovereign, agentic runtime acting as your primary digital interface. By merging strategic hierarchical planning with a local-first execution gateway, it coordinates across a secure multi-bridge ecosystem. It is engineered for 100% data sovereignty, ensuring your personal and professional digital life remains cryptographically secured and physically under your control.
+  </p>
+</div>
+
+---
+
+<div id="simplicial-vault">
+  <h2>The Simplicial Vault</h2>
+  <p>The Simplicial Vault is the core architectural primitive for security and isolation within the Alluci-Polytope ecosystem. Unlike flat security models, it treats every connection, data source, and agent session as a cryptographically secured node.</p>
+  
+  <div style="margin-left: 20px;">
+    <h4>Isolated Execution Containers</h4>
+    <ul>
+      <li><strong>Bridge Segregation:</strong> Every external bridge (Signal, iMessage, Slack, G-Drive) operates in its own dedicated Vault. If one bridge is compromised, the breach is physically and cryptographically contained, preventing cross-contamination to other channels.</li>
+      <li><strong>Zero-Trust Sandboxing:</strong> Agents execute tools and code within a "Simplicial Sandbox," ensuring they cannot access local system files or sensitive keys unless explicitly authorized via the Gateway.</li>
+    </ul>
+
+   <h4>Cryptographic Sovereignty</h4>
+    <ul>
+      <li><strong>Identity-Bound Access:</strong> Access to a Vault is tethered to your <strong>VerusID</strong>. Every interaction within the vault is signed, providing an immutable audit trail of agent actions.</li>
+      <li><strong>Ephemeral Key Management:</strong> Keys for enterprise and social bridges are stored in hardware-encrypted enclaves. Users can trigger <code>[ ROTATE_KEYS ]</code> to instantly invalidate session tokens across all vaults.</li>
+      <li><strong>The Bio-Vault:</strong> A specialized high-security layer for ACE telemetry. Raw biometric data (heart rate, stress levels) never leaves this local vault; only abstracted "State Tokens" are released to the reasoning engine.</li>
+    </ul>
+  </div>
+</div>
+
+---
+
+<div id="affective-computing-overview">
+  <h2>Affective Computing Engine (ACE)</h2>
+  <p>The ACE aligns machine logic with human biology. It bridges raw data and human sentiment, ensuring the assistant works in resonance with your current physiological and mental state.</p>
+  
+  <div style="margin-left: 20px;">
+    <h4>Biometric State Transmission</h4>
+    <ul>
+      <li><strong>Physical State (Vitality):</strong> Tracks HR, HRV, and Blood Oxygen. If strain is high, the Assistant deprioritizes non-urgent tasks to protect recovery.</li>
+      <li><strong>Emotional State (Affective Valence):</strong> Detects state positivity/negativity via skin conductance. Shifts tone from concise (stressed) to expansive (high-vibe).</li>
+      <li><strong>Cognitive State (Mental Load):</strong> Identifies "Deep Work" states via biomarkers to auto-silence distracting bridges.</li>
+    </ul>
+
+  <h4>The Flow Assistance Framework</h4>
+    <ul>
+      <li><strong>Peak Performance:</strong> Suggests high-logic "Epics" during peak energy windows.</li>
+      <li><strong>Burnout Prevention:</strong> Intervenes during prolonged cognitive load with micro-break suggestions.</li>
+      <li><strong>Flow Signature:</strong> Learns which tasks excite you versus which cause friction to refine delegation.</li>
+    </ul>
+  </div>
+</div>
+
+---
+
+<div id="core-platform">
+  <h2>Core Platform Capabilities</h2>
+  <ul>
+    <li><strong>Local-first Gateway:</strong> A single control plane for managing sessions, channels, tools, and real-time events.</li>
+    <li><strong>Multi-channel Bridges:</strong> Engage with agents across channels you use (Telegram, Signal, iMessage, Slack...).</li>
+    <li><strong>Multi-agent Routing:</strong> Route inbound communications to personal agents with dedicated workspaces.</li>
+    <li><strong>Voice Wake + Talk Mode:</strong> Always-on speech interface for macOS/iOS/Android.</li>
+    <li><strong>Live Canvas:</strong> Agent-driven visual workspace utilizing A2UI for real-time collaboration.</li>
+    <li><strong>First-class Tools:</strong> Native support for browser automation, canvas nodes, workfows, and application actions.</li>
+  </ul>
+</div>
+
+---
+
+<div id="synthesis-api-support">
+  <h2>Multi-Modal Synthesis & API Orchestration</h2>
+  
+  <div style="margin-left: 20px;">
+    <h4>1. LLM_REASONING_&_LOGIC</h4>
+    <ul>
+      <li><strong>OpenAI:</strong> GPT-5.1 and o1 for deep strategic planning.</li>
+      <li><strong>Anthropic:</strong> Claude 4.5 / 4.6 for nuanced context and coding.</li>
+      <li><strong>Google Cloud:</strong> Gemini 3 for massive context windows.</li>
+      <li><strong>Groq:</strong> LPU-powered high-speed tactical execution.</li>
+    </ul>
+
+   <h4>2. CONVERSATIONAL_AUDIO</h4>
+    <ul>
+      <li><strong>OpenAI Realtime API:</strong> Low-latency, emotionally resonant vocal interaction.</li>
+      <li><strong>ElevenLabs:</strong> Specialized Agents API for high-fidelity voice synthesis.</li>
+      <li><strong>Retell AI:</strong> Professional telephony and conversational bridge management.</li>
+      <li><strong>Inworld AI:</strong> Advanced character-driven dialogue and personality.</li>
+   
+
+   <h4>3. MUSIC_SYNTHESIS</h4>
+    <ul>
+      <li><strong>Suno API:</strong> Full vocal and melodic composition.</li>
+      <li><strong>ElevenLabs Music:</strong> High-resolution instrument and vocal synthesis.</li>
+      <li><strong>Stable Audio:</strong> Stability AI-driven custom soundscapes.</li>
+      <li><strong>Soundverse:</strong> Functional audio generation for professional workflows.</li>
+
+
+   <h4>4. IMAGE_MANIFESTATION</h4>
+    <ul>
+      <li><strong>OpenAI:</strong> DALL·E 3 for prompt-precise art.</li>
+      <li><strong>Fal.ai:</strong> Ultra-fast diffusion for real-time feedback.</li>
+      <li><strong>Midjourney:</strong> Alpha API for industry-leading aesthetic fidelity.</li>
+      <li><strong>Adobe Firefly:</strong> Enterprise-grade image generation.</li>
+
+
+   <h4>5. VIDEO_TEMPORAL_GENESIS</h4>
+    <ul>
+      <li><strong>Runway:</strong> Gen-4.5 cinematic video synthesis.</li>
+      <li><strong>Luma Dream Machine:</strong> Highly consistent temporal content creation.</li>
+      <li><strong>HeyGen / Synthesia:</strong> Professional AI presentations and avatars.</li>
+      <li><strong>Livepeer:</strong> Decentralized video transcoding infrastructure.</li>
+
+  </div>
+</div>
+
+---
+
+<div id="security-trust">
+>Security & Trust Protocol</h2>
+  <ul>
+    <li><strong>ONE_TOUCH_LOGIN:</strong> Enabled for FaceID/TouchID verified platforms.</li>
+    <li><strong>E2E_ENCRYPTION:</strong> Mandatory for iMessage, Signal, and WhatsApp bridges.</li>
+    <li><strong>SESSION_ISOLATION:</strong> Every bridge and agent task runs in a Simplicial Vault.</li>
+    <li><strong>AUTONOMY_LEVEL:</strong> Full sovereign execution via VerusID-linked V-Auth.</li>
+    <li><strong>Vault Operations:</strong> <code>[ ROTATE_KEYS ]</code> and <code>[ FLUSH_CACHE ]</code> for instant cryptographic resets.</li>
+  </ul>
+</div>
+
+---
+
+<div id="bridge-matrix">
+  <h2>Bridge Matrix & Social Manifold</h2>
+  <table>
+    <tr>
+      <th>Subsystem</th>
+      <th>Channel</th>
+      <th>Method</th>
+    </tr>
+    <tr>
+      <td><strong>Apple Ecosystem</strong></td>
+      <td>iCloud / iMessage / iWatch / iPhone</td>
+      <td>Secure Tunnel</td>
+    </tr>
+    <tr>
+      <td><strong>Social Manifold</strong></td>
+      <td>WhatsApp / Telegram / Signal / X / Meta</td>
+      <td>QR_Sync / Token / OAuth2</td>
+    </tr>
+    <tr>
+      <td><strong>Enterprise Core</strong></td>
+      <td>Slack / MS Teams / G-Drive / Gmail</td>
+      <td>OAuth2</td>
+    </tr>
+    <tr>
+      <td><strong>Identity Link</strong></td>
+      <td>VerusID / Identity Link</td>
+      <td>VDXF Link</td>
+    </tr>
+  </table>
+</div>
+
+---
+
+<div id="deployment-notes" style="font-size: 0.9em; opacity: 0.8;">
+  <h3>Hardware & Safety</h3>
+  <ul>
+    <li><strong>Apple Silicon:</strong> Optimized for local inference via MPS and hardware-accelerated ACE logic.</li>
+    <li><strong>Privacy Policy:</strong> Strict Isolation Protocol—Data and Vault keys never leave local hardware.</li>
+  </ul>
+  <p align="center"><em>"Alluci-Polytope: Turning AI from a passive tool into a sovereign, affective partner."</em></p>
+</div>
