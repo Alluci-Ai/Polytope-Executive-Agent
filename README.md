@@ -10,6 +10,8 @@
     <img src="https://img.shields.io/badge/Runtime-Alluci_Sovereign_Gateway-purple" alt="Sovereign Gateway" />
     <img src="https://img.shields.io/badge/Affective_Computing-Alluci_ACE_Engine-blue" alt="Sovereign Gateway" />
     <img src="https://img.shields.io/badge/Autonomous_Multi_Agent-Polytope_Executive_Orchestration_Engine-pink" alt="Sovereign Gateway" />
+    <img src="https://img.shields.io/badge/Multi_Media_Synthesis-Polytope_Gateway_Engine-lavender" alt="Sovereign Gateway" />
+  </p>
   </p>
 </div>
 
