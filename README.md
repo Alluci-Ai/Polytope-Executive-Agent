@@ -75,11 +75,11 @@
   <h2>Core Platform Capabilities</h2>
   <ul>
     <li><strong>Local-first Gateway:</strong> A single control plane for managing sessions, channels, tools, and real-time events.</li>
-    <li><strong>Multi-channel Inbox:</strong> Unified access to WhatsApp, Telegram, Slack, Discord, Signal, iMessage, and WebChat.</li>
-    <li><strong>Multi-agent Routing:</strong> Route inbound communications to isolated agents with dedicated workspaces.</li>
-    <li><strong>Voice Wake + Talk Mode:</strong> Always-on speech interface for macOS/iOS/Android via ElevenLabs.</li>
+    <li><strong>Multi-channel Bridges:</strong> Engage with agents across channels you use (Telegram, Signal, iMessage, Slack...).</li>
+    <li><strong>Multi-agent Routing:</strong> Route inbound communications to personal agents with dedicated workspaces.</li>
+    <li><strong>Voice Wake + Talk Mode:</strong> Always-on speech interface for macOS/iOS/Android.</li>
     <li><strong>Live Canvas:</strong> Agent-driven visual workspace utilizing A2UI for real-time collaboration.</li>
-    <li><strong>First-class Tools:</strong> Native support for browser automation, canvas nodes, cron, and Discord/Slack actions.</li>
+    <li><strong>First-class Tools:</strong> Native support for browser automation, canvas nodes, workfows, and application actions.</li>
   </ul>
 </div>
 
