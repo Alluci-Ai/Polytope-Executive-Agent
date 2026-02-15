@@ -28,7 +28,10 @@ const sovereignTools: FunctionDeclaration[] = [
     description: 'Execute a complex autonomous objective using the backend DAG planner.',
     parameters: {
       type: Type.OBJECT,
-      properties: { objective: { type: Type.STRING } },
+      properties: { 
+          objective: { type: Type.STRING },
+          autonomy_level: { type: Type.STRING, enum: ['RESTRICTED', 'SEMI_AUTONOMOUS', 'SOVEREIGN'] }
+      },
       required: ['objective']
     }
   }
@@ -123,15 +126,22 @@ export class AlluciGeminiService {
   private async callBackendTool(name: string, args: any): Promise<string> {
     this.audit.addEntry("DAEMON_GATEWAY_REQUEST", { tool: name, args });
     try {
+      // Default to SEMI_AUTONOMOUS if not provided
+      const autonomyLevel = args.autonomy_level || 'SEMI_AUTONOMOUS';
+      const payload = {
+          objective: args.objective || JSON.stringify(args),
+          autonomy_level: autonomyLevel
+      };
+      
       const response = await fetch(`${this.DAEMON_URL}/objective/execute`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ objective: args.objective || JSON.stringify(args) }),
+        body: JSON.stringify(payload),
       });
       const data = await response.json();
-      return data.result;
+      return JSON.stringify(data.result);
     } catch (e) {
-      return `[ ERROR ]: Local Daemon Connection Refused.`;
+      return `[ ERROR ]: Local Daemon Connection Refused. Ensure backend is running on port 8000.`;
     }
   }
 

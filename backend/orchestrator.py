@@ -28,14 +28,17 @@ class ExecutiveOrchestrator:
         # 1. Validation & Affective Check
         if self.ace.should_throttle():
              self.logger.warning("Affective state limits high-frequency execution.")
-             # In a production scenario, we might reject or delay based on this check
+             if autonomy == "RESTRICTED":
+                 return "[ HALTED ]: Biometric stress limit reached for restricted autonomy."
         
         # 2. Plan Generation
-        # Currently simulated, but structurally ready for LLM injection
-        # dag = await self.router.plan(objective)
+        # We use the router to parse the intent first
+        intent_summary = await self._tool_parse_intent({"input": objective})
+        self.logger.info(f"Parsed Intent: {intent_summary}")
+
         dag_plan = [
-            DAGTask(id="task_init", action="parse_intent", args={"input": objective}, status=TaskStatus.PENDING),
-            DAGTask(id="task_exec", action="execute_core", args={"context": "init_result"}, dependencies=["task_init"], status=TaskStatus.PENDING)
+            DAGTask(id="task_intent", action="parse_intent", args={"input": objective}, status=TaskStatus.PENDING),
+            DAGTask(id="task_exec", action="execute_core", args={"context": intent_summary, "autonomy": autonomy}, dependencies=["task_intent"], status=TaskStatus.PENDING)
         ]
         
         results = {}
@@ -46,12 +49,9 @@ class ExecutiveOrchestrator:
             task.status = TaskStatus.RUNNING
             
             try:
-                # Resolve dependencies if needed (omitted for brevity)
-                
                 # Execute via Registry
                 if task.action in self.tool_registry:
                     handler = self.tool_registry[task.action]
-                    # In a real implementation, we'd pass resolved args
                     output = await handler(task.args)
                 else:
                     raise ValueError(f"Unknown action: {task.action}")
@@ -64,19 +64,21 @@ class ExecutiveOrchestrator:
             except Exception as e:
                 task.status = TaskStatus.FAILED
                 self.logger.error(f"Task {task.id} Failed: {e}")
-                raise e
+                results[task.id] = f"Error: {str(e)}"
+                # Break chain on failure
+                break
                 
         return json.dumps(results)
 
     # --- Tool Implementations ---
 
     async def _tool_parse_intent(self, args: Dict[str, Any]) -> str:
-        # Placeholder for NLU logic
-        return f"parsed_intent_for_{args.get('input', 'unknown')}"
+        prompt = f"You are an autonomous executive. Parse the intent of the following objective and return a concise technical summary: {args.get('input', '')}"
+        return await self.router.get_response(prompt, complexity="MEDIUM")
 
     async def _tool_execute_core(self, args: Dict[str, Any]) -> str:
         # Placeholder for core logic execution
-        return "execution_successful"
+        return f"Executed core logic for intent: {args.get('context', 'N/A')} with autonomy {args.get('autonomy', 'UNKNOWN')}"
 
     async def _tool_system_query(self, args: Dict[str, Any]) -> str:
         # Placeholder for system lookups
