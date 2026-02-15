@@ -51,7 +51,7 @@ async def lifespan(app: FastAPI):
         orchestrator = ExecutiveOrchestrator(router, vault, ace, settings)
         task_manager = TaskManager()
         
-        # 4. Start Background Services (Heartbeat)
+        # 4. Start Background Services
         await orchestrator.start_background_services()
         
         logger.info("[ BOOT ]: System integrity verified. Manifold active.")

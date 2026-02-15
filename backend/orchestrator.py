@@ -2,14 +2,12 @@
 import asyncio
 import json
 import logging
-from typing import List, Dict, Any, Callable, Set, Optional
-from datetime import datetime
+from typing import List, Dict, Any, Callable, Set
 from .models import DAGTask, TaskStatus, CriticResult
 from .inference.router import ModelRouter
 from .security.vault import VaultManager
 from .ace.engine import AffectiveEngine
 from .config import Settings
-from .heartbeat import HeartbeatDaemon
 
 class ExecutiveOrchestrator:
     def __init__(self, router: ModelRouter, vault: VaultManager, ace: AffectiveEngine, settings: Settings):
@@ -29,54 +27,13 @@ class ExecutiveOrchestrator:
         
         # In-memory persistence for the session
         self.execution_history = []
-        
-        # Heartbeat System
-        self.heartbeat = HeartbeatDaemon(self, interval_seconds=900) # 15 minutes
 
     async def start_background_services(self):
-        """Called by app lifecycle to start the heartbeat loop."""
-        asyncio.create_task(self.heartbeat.start())
+        """Called by app lifecycle."""
+        pass
 
     async def stop_background_services(self):
-        await self.heartbeat.stop()
-
-    async def trigger_proactive_event(self, orders: List[str], changes: List[str]):
-        """
-        Called by HeartbeatDaemon when conditions warrant agent attention.
-        """
-        # Construct a specific context for the LLM
-        context = f"""
-        SYSTEM: You are waking up for a scheduled heartbeat check.
-        STANDING ORDERS (HEARTBEAT.md): {json.dumps(orders)}
-        DETECTED STATE CHANGES: {json.dumps(changes)}
-        
-        INSTRUCTION: 
-        1. Analyze the changes against the standing orders.
-        2. Decide if a proactive notification or action is required.
-        3. If YES, generate a brief, rich-text status update for the user.
-        4. If NO, return NULL.
-        """
-        
-        try:
-            # We use the router to get a "thought"
-            response = await self.router.get_response(context, complexity="MEDIUM")
-            
-            # Simple heuristic: If response is short/empty or indicates no action, we ignore.
-            if len(response) > 20 and "NULL" not in response:
-                self.logger.info(f"Proactive Action Decided: {response[:50]}...")
-                
-                # In a real system, we would push this to a Notification Queue
-                # For now, we append it to the audit log so the UI sees it
-                log_entry = {
-                    "event": "PROACTIVE_HEARTBEAT",
-                    "details": {"action": "notification", "content": response},
-                    "timestamp": datetime.utcnow().isoformat()
-                }
-                # (Simulating audit log push - normally handled by AuditLedger in core)
-                self.execution_history.append(log_entry)
-                
-        except Exception as e:
-            self.logger.error(f"Proactive Reasoning Failed: {e}")
+        pass
 
     async def execute_objective(self, objective: str, autonomy: str) -> Dict[str, Any]:
         self.logger.info(f"Received Objective: {objective} [Autonomy: {autonomy}]")
@@ -280,54 +237,25 @@ class ExecutiveOrchestrator:
                 dep_results = {dep: tasks[dep].result for dep in task.dependencies}
                 task.args["dependency_data"] = dep_results
                 
-                # --- ENHANCED LOGGING START ---
-                start_time = datetime.now()
-                try:
-                    # Filter out large dependency data for logs to keep them readable
-                    filtered_args = {k: v for k, v in task.args.items() if k != "dependency_data"}
-                    args_str = json.dumps(filtered_args, default=str)
-                except Exception:
-                    args_str = "Unserializable Args"
-
-                task.logs.append(f"[{start_time.isoformat()}] STARTED | Action: {task.action} | Args: {args_str}")
                 self.logger.info(f"Executing Task: {t_id} ({task.action})")
-                # ------------------------------
                 
                 try:
                     handler = self.tool_registry.get(task.action, self._tool_fallback)
                     
+                    # Execute Tool
+                    # In a real system, this would be an async bridge call
                     result = await handler(task.args)
                     
                     task.result = result
                     task.status = TaskStatus.COMPLETED
-                    
-                    # --- ENHANCED LOGGING SUCCESS ---
-                    end_time = datetime.now()
-                    duration = (end_time - start_time).total_seconds()
-                    
-                    # Preview result to avoid bloating logs with massive outputs
-                    res_str = str(result)
-                    result_preview = res_str[:200] + "..." if len(res_str) > 200 else res_str
-                    
-                    task.logs.append(f"[{end_time.isoformat()}] COMPLETED | Duration: {duration:.3f}s | Result: {result_preview}")
-                    # --------------------------------
-                    
                     completed_ids.add(t_id)
                     pending_ids.remove(t_id)
                     progress_made = True
                 except Exception as e:
-                    # --- ENHANCED LOGGING FAILURE ---
-                    end_time = datetime.now()
-                    duration = (end_time - start_time).total_seconds()
-                    
                     self.logger.error(f"Task {t_id} failed: {e}")
                     task.status = TaskStatus.FAILED
                     task.result = f"Execution Error: {str(e)}"
-                    
-                    task.logs.append(f"[{end_time.isoformat()}] FAILED | Duration: {duration:.3f}s | Error: {str(e)}")
-                    # --------------------------------
-                    
-                    pending_ids.remove(t_id) 
+                    pending_ids.remove(t_id) # Fail fast for this demo, or retry
             
             if not progress_made and pending_ids:
                 break

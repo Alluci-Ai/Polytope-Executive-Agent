@@ -10,6 +10,12 @@ class TaskStatus(str, Enum):
     FAILED = "failed"
     CRITIQUED_RETRY = "critiqued_retry"
 
+class TaskPriority(str, Enum):
+    LOW = "LOW"
+    MEDIUM = "MEDIUM"
+    HIGH = "HIGH"
+    URGENT = "URGENT"
+
 class PlanStep(BaseModel):
     id: str
     description: str
@@ -56,22 +62,16 @@ class CriticResult(BaseModel):
 class LoginRequest(BaseModel):
     key: str
 
-class TaskPriority(str, Enum):
-    LOW = "LOW"
-    MEDIUM = "MEDIUM"
-    HIGH = "HIGH"
-    URGENT = "URGENT"
-
 class TaskItem(BaseModel):
     index: int
     raw_line: str
     description: str
     completed: bool
     priority: TaskPriority
-    due_date: Optional[str] = None # YYYY-MM-DD
+    due_date: Optional[str] = None
 
 class TaskUpdate(BaseModel):
     description: str
     completed: bool
-    priority: TaskPriority
+    priority: TaskPriority = TaskPriority.MEDIUM
     due_date: Optional[str] = None
