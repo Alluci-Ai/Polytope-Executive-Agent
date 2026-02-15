@@ -1,6 +1,6 @@
 
 import { generateKeyPairSync, sign, verify, createPublicKey, KeyObject } from 'node:crypto';
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, chmodSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 
@@ -16,7 +16,14 @@ export class KeyStore {
 
   constructor() {
     if (!existsSync(KeyStore.KEY_DIR)) {
-      mkdirSync(KeyStore.KEY_DIR, { recursive: true });
+      mkdirSync(KeyStore.KEY_DIR, { recursive: true, mode: 0o700 });
+    } else {
+      // Ensure strict permissions on existing directory
+      try {
+        chmodSync(KeyStore.KEY_DIR, 0o700);
+      } catch (error) {
+        // Ignore errors on non-POSIX systems or ownership issues
+      }
     }
   }
 
@@ -40,8 +47,11 @@ export class KeyStore {
       privateKeyEncoding: { type: 'pkcs8', format: 'pem' }
     });
 
-    writeFileSync(KeyStore.PRIVATE_KEY_PATH, privateKey as string);
-    writeFileSync(KeyStore.PUBLIC_KEY_PATH, publicKey as string);
+    // Write private key with strict 600 permissions (Owner Read/Write only)
+    writeFileSync(KeyStore.PRIVATE_KEY_PATH, privateKey as string, { mode: 0o600 });
+    
+    // Write public key with 644 permissions (Public Read)
+    writeFileSync(KeyStore.PUBLIC_KEY_PATH, publicKey as string, { mode: 0o644 });
 
     return { publicKey: publicKey as string };
   }

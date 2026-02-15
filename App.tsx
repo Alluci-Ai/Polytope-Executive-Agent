@@ -355,18 +355,27 @@ const App: React.FC = () => {
 
   // Poll Daemon Status
   useEffect(() => {
+    let mounted = true;
     const checkDaemon = async () => {
       try {
-        const res = await fetch(`${DAEMON_URL}/system/status`);
-        if (res.ok) setDaemonStatus('ONLINE');
-        else setDaemonStatus('OFFLINE');
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 2000);
+        const res = await fetch(`${DAEMON_URL}/system/status`, { signal: controller.signal });
+        clearTimeout(timeoutId);
+        if (mounted) {
+          if (res.ok) setDaemonStatus('ONLINE');
+          else setDaemonStatus('OFFLINE');
+        }
       } catch (e) {
-        setDaemonStatus('OFFLINE');
+        if (mounted) setDaemonStatus('OFFLINE');
       }
     };
     checkDaemon();
     const interval = setInterval(checkDaemon, 5000);
-    return () => clearInterval(interval);
+    return () => {
+      mounted = false;
+      clearInterval(interval);
+    };
   }, []);
 
   useEffect(() => {
@@ -621,9 +630,9 @@ const App: React.FC = () => {
         
         {/* Desktop Controls */}
         <div className="hidden md:flex items-center gap-4">
-          <div className="flex flex-col items-end mr-4">
+          <div className="flex flex-col items-end mr-4 animate-in fade-in duration-500">
             <span className="text-[6px] font-mono tracking-widest opacity-60">DAEMON_STATUS</span>
-            <span className={`text-[8px] font-bold ${daemonStatus === 'ONLINE' ? 'text-agent' : 'text-tension'}`}>
+            <span className={`text-[8px] font-bold tracking-wider ${daemonStatus === 'ONLINE' ? 'text-agent' : 'text-tension'}`}>
               [{daemonStatus}]
             </span>
           </div>
@@ -998,23 +1007,6 @@ const App: React.FC = () => {
                               </div>
                             </div>
                           ))}
-                       </div>
-                    </div>
-                 ) : isAuditOpen ? (
-                    <div className="flex flex-col gap-6 font-mono text-[10px]">
-                       <div className="hidden md:grid grid-cols-5 gap-4 pb-4 border-b-2 border-sovereign baunk-style text-sovereign text-[9px] tracking-widest">
-                          <span>TIMESTAMP</span><span>EVENT_TYPE</span><span>ENTITY</span><span>DETAILS</span><span>MANIFOLD_HASH</span>
-                       </div>
-                       <div className="space-y-4 md:space-y-2">
-                         {auditLog.map((e, i) => (
-                           <div key={i} className="flex flex-col md:grid md:grid-cols-5 gap-2 md:gap-4 py-3 md:py-4 border-b border-zinc/10 hover:bg-zinc/5 transition-colors group">
-                              <span className="opacity-40 text-[9px] md:text-inherit">{e.timestamp}</span>
-                              <span className="font-bold group-hover:text-agent transition-colors">{e.event}</span>
-                              <span className="opacity-60 hidden md:block">{e.details.channel || e.details.tool || 'SYSTEM'}</span>
-                              <span className="truncate opacity-80 italic">{JSON.stringify(e.details)}</span>
-                              <span className="text-agent font-bold text-[9px] md:text-inherit">{e.hash}</span>
-                           </div>
-                         ))}
                        </div>
                     </div>
                  ) : isSettingsOpen ? (
