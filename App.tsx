@@ -15,6 +15,7 @@ import { AuditEntry, PersonalityTraits, Connection, AuthType, SkillManifest, Api
 
 // [ CONFIGURATION_NODE ]: Replace this with your valid Google Client ID
 const GOOGLE_CLIENT_ID = 'YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com';
+const DAEMON_URL = 'http://localhost:8000';
 
 declare global {
   interface Window {
@@ -256,6 +257,7 @@ const MobileMenu: React.FC<{ isOpen: boolean; onClose: () => void; onAction: (ac
 const App: React.FC = () => {
   const [isConnected, setIsConnected] = useState(false);
   const [isCameraActive, setIsCameraActive] = useState(false);
+  const [daemonStatus, setDaemonStatus] = useState<'ONLINE' | 'OFFLINE'>('OFFLINE');
   
   // Mobile Responsiveness States
   const [mobileView, setMobileView] = useState<MobileView>('terminal');
@@ -350,6 +352,22 @@ const App: React.FC = () => {
   const frameIntervalRef = useRef<number | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+
+  // Poll Daemon Status
+  useEffect(() => {
+    const checkDaemon = async () => {
+      try {
+        const res = await fetch(`${DAEMON_URL}/system/status`);
+        if (res.ok) setDaemonStatus('ONLINE');
+        else setDaemonStatus('OFFLINE');
+      } catch (e) {
+        setDaemonStatus('OFFLINE');
+      }
+    };
+    checkDaemon();
+    const interval = setInterval(checkDaemon, 5000);
+    return () => clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
@@ -603,6 +621,12 @@ const App: React.FC = () => {
         
         {/* Desktop Controls */}
         <div className="hidden md:flex items-center gap-4">
+          <div className="flex flex-col items-end mr-4">
+            <span className="text-[6px] font-mono tracking-widest opacity-60">DAEMON_STATUS</span>
+            <span className={`text-[8px] font-bold ${daemonStatus === 'ONLINE' ? 'text-agent' : 'text-tension'}`}>
+              [{daemonStatus}]
+            </span>
+          </div>
           <button onClick={() => { setIsAuditOpen(true); refreshAuditLog(); }} className="alce-button text-[8px] baunk-style hidden lg:block">[ AUDIT ]</button>
           <button onClick={() => setIsDriveOpen(!isDriveOpen)} className="alce-button text-[8px] baunk-style hidden lg:block">[ FILES ]</button>
           <button onClick={() => setIsSettingsOpen(!isSettingsOpen)} className="alce-button text-[8px] baunk-style">[ SKILLS ]</button>
