@@ -187,7 +187,9 @@
   <h3>Hardware & Safety</h3>
   <ul>
     <li><strong>Apple Silicon:</strong> Optimized for local inference via MPS and hardware-accelerated ACE logic.</li>
-    <li><strong>Privacy Policy:</strong> Strict Isolation Protocol—Data and Vault keys never leave local hardware.</li>
+    <li><strong>Linux & Windows:</strong> High-throughput orchestration leveraging NVIDIA CUDA or Vulkan for broad GPU compatibility and native C++ inference cores.</li>
+    <li><strong>Raspberry Pi (4/5):</strong> Engineered for the edge with extreme 4-bit/ternary quantization (BitNet) and ARM-optimized kernels for efficient, low-power executive intelligence.</li>
+    <li><strong>Privacy Policy:</strong> Strict Isolation Protocol—all biological data, message histories, and Vault keys are anchored to your local hardware and never traverse the cloud.</li>
   </ul>
-  <p align="center"><em>"Alluci-Polytope: Turning AI from a passive tool into a sovereign, affective partner."</em></p>
+  <p align="center"><em>"Alluci-Polytope: Turning AI from a passive tool into a sovereign, affective partner across every device you own."</em></p>
 </div>
