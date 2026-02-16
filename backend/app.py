@@ -15,6 +15,7 @@ from .security.vault import VaultManager
 from .security.auth import create_access_token, verify_authenticated
 from .ace.engine import AffectiveEngine
 from .tasks import TaskManager
+from .database import create_db_and_tables
 
 # 1. Config & Logging
 settings = load_settings()
@@ -33,6 +34,9 @@ async def lifespan(app: FastAPI):
     logger.info(f"[ BOOT ]: Polytope Daemon v4.5.1 ({settings.APP_ENV})")
     
     try:
+        # Initialize Database
+        create_db_and_tables()
+        
         # Initialize Core Services
         vault = VaultManager(settings.POLYTOPE_MASTER_KEY)
         router = ModelRouter(settings)
@@ -98,22 +102,22 @@ async def ingest_telemetry(data: TelemetryData):
     if not ace: raise HTTPException(status_code=503)
     return {"status": "manifold_adjusted", "policy": ace.process_telemetry(data)}
 
-# --- Task Routes ---
-@app.get("/tasks", response_model=list[TaskItem])
+# --- Task Routes (Privileged) ---
+@app.get("/tasks", response_model=list[TaskItem], dependencies=[Depends(verify_authenticated)])
 async def get_tasks(status: str = "all", priority: str = None, timeline: str = None):
     return task_manager.get_tasks(status=status, priority=priority, timeline=timeline)
 
-@app.post("/tasks", response_model=TaskItem)
+@app.post("/tasks", response_model=TaskItem, dependencies=[Depends(verify_authenticated)])
 async def add_task(task: TaskUpdate):
     return task_manager.add_task(task)
 
-@app.put("/tasks/{index}", response_model=TaskItem)
+@app.put("/tasks/{index}", response_model=TaskItem, dependencies=[Depends(verify_authenticated)])
 async def update_task(index: int, task: TaskUpdate):
     res = task_manager.update_task(index, task)
     if not res: raise HTTPException(status_code=404)
     return res
 
-@app.delete("/tasks/{index}")
+@app.delete("/tasks/{index}", dependencies=[Depends(verify_authenticated)])
 async def delete_task(index: int):
     if not task_manager.delete_task(index): raise HTTPException(status_code=404)
     return {"status": "deleted"}

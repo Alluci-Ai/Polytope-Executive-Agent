@@ -1,14 +1,22 @@
-
-from pydantic import BaseModel, Field
+from datetime import datetime
 from typing import List, Dict, Any, Optional
 from enum import Enum
+from pydantic import BaseModel, Field as PydanticField
+from sqlmodel import SQLModel, Field, Relationship, Column, JSON
 
+# --- Enums ---
 class TaskStatus(str, Enum):
     PENDING = "pending"
     RUNNING = "running"
     COMPLETED = "completed"
     FAILED = "failed"
-    CRITIQUED_RETRY = "critiqued_retry"
+    SKIPPED = "skipped"
+
+class RunStatus(str, Enum):
+    QUEUED = "queued"
+    ACTIVE = "active"
+    COMPLETED = "completed"
+    FAILED = "failed"
 
 class TaskPriority(str, Enum):
     LOW = "LOW"
@@ -16,15 +24,36 @@ class TaskPriority(str, Enum):
     HIGH = "HIGH"
     URGENT = "URGENT"
 
-class PlanStep(BaseModel):
-    id: str
-    description: str
-    tool: str
-    dependencies: List[str] = []
+# --- Database Models (Persistence) ---
 
-class ExecutionPlan(BaseModel):
+class Run(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
     objective: str
-    steps: List[PlanStep]
+    autonomy_level: str
+    status: str = Field(default=RunStatus.QUEUED)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    completed_at: Optional[datetime] = None
+    score: float = 0.0
+    feedback: Optional[str] = None
+    manifest_signature: Optional[str] = None
+    
+    tasks: List["TaskRecord"] = Relationship(back_populates="run")
+
+class TaskRecord(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    run_id: int = Field(foreign_key="run.id")
+    task_dag_id: str  # The ID from the planner (e.g., "step_1")
+    action: str
+    args: Dict = Field(default={}, sa_column=Column(JSON))
+    status: str = Field(default=TaskStatus.PENDING)
+    result: Optional[str] = None
+    error: Optional[str] = None
+    start_time: Optional[datetime] = None
+    end_time: Optional[datetime] = None
+    
+    run: Optional[Run] = Relationship(back_populates="tasks")
+
+# --- Engine Memory Models (Runtime) ---
 
 class DAGTask(BaseModel):
     id: str
@@ -35,6 +64,8 @@ class DAGTask(BaseModel):
     result: Optional[Any] = None
     retry_count: int = 0
     logs: List[str] = []
+
+# --- API Schemas ---
 
 class ObjectiveRequest(BaseModel):
     objective: str
@@ -53,11 +84,6 @@ class SystemStatus(BaseModel):
     active_bridges: List[str]
     vault_integrity: bool
     daemon_version: str = "4.5.1"
-
-class CriticResult(BaseModel):
-    score: float  # 0.0 to 1.0
-    feedback: str
-    passed: bool
 
 class LoginRequest(BaseModel):
     key: str

@@ -1,18 +1,23 @@
 import asyncio
 import json
 import logging
+from datetime import datetime
 from typing import Dict, Any, Callable
-from .models import TaskStatus
+from sqlmodel import Session
+
+from .models import TaskStatus, Run, RunStatus
 from .inference.router import ModelRouter
 from .security.vault import VaultManager
 from .ace.engine import AffectiveEngine
 from .config import Settings
 from .security.verus import SovereignIdentity
+from .database import engine as db_engine
 
 # Engine Modules
 from .engine.planner import Planner
 from .engine.executor import Executor
 from .engine.critic import Critic
+from .adapters.registry import AdapterRegistry
 
 class ExecutiveOrchestrator:
     def __init__(self, router: ModelRouter, vault: VaultManager, ace: AffectiveEngine, settings: Settings):
@@ -23,16 +28,15 @@ class ExecutiveOrchestrator:
         self.identity = SovereignIdentity(settings)
         self.planner = Planner(router)
         self.critic = Critic(router, settings.CRITIC_THRESHOLD)
+        self.adapter_registry = AdapterRegistry()
         
-        # Tools Registry
-        self.tool_registry: Dict[str, Callable] = {
-            "web_search": self._tool_web_search,
-            "summarize": self._tool_summarize,
-            "analyze_data": self._tool_analyze,
-            "system_query": self._tool_system_query
-        }
-        
-        self.executor = Executor(self.tool_registry, settings.MAX_CONCURRENT_TASKS)
+        # Pass a callable that returns the engine binding or creates a session
+        # For simplicity with SQLModel, we can pass the engine and let Executor handle session creation
+        self.executor = Executor(
+            self.adapter_registry, 
+            session_factory=lambda: db_engine,
+            max_concurrent=settings.MAX_CONCURRENT_TASKS
+        )
 
     async def start_background_services(self):
         self.logger.info("Background services started.")
@@ -43,26 +47,33 @@ class ExecutiveOrchestrator:
     async def execute_objective(self, objective: str, autonomy: str) -> Dict[str, Any]:
         self.logger.info(f"🚀 EXECUTING SOVEREIGN OBJECTIVE: {objective}")
 
-        # 1. Affective Gate
+        # 1. Create DB Run Record
+        run_id = self._create_run_record(objective, autonomy)
+
+        # 2. Affective Gate
         if autonomy == "RESTRICTED" and self.ace.should_throttle():
+             self._update_run_status(run_id, RunStatus.FAILED, feedback="Biometric Throttle")
              return {"status": "halted", "reason": "Biometric stress limit reached."}
 
-        # 2. Planning (Phase P1)
+        # 3. Planning
         try:
             tasks = await self.planner.generate_plan(objective)
             current_plan = [t.dict() for t in tasks.values()]
+            self._update_run_status(run_id, RunStatus.ACTIVE)
         except Exception as e:
+            self._update_run_status(run_id, RunStatus.FAILED, feedback=str(e))
             return {"status": "failed", "reason": f"Planning failed: {str(e)}"}
 
-        # 3. Sovereign Signing (Phase P6)
+        # 4. Sovereign Signing (Phase P6)
         signed_manifest = self.identity.sign_manifest({
             "objective": objective,
             "plan_hash": hash(str(current_plan)),
             "timestamp": asyncio.get_event_loop().time()
         })
+        self._save_manifest(run_id, signed_manifest.get("signature"))
         self.logger.info(f"📜 Manifest Signed by {signed_manifest['signer']}")
 
-        # 4. Execution Loop
+        # 5. Execution Loop
         final_output = ""
         critic_score = 0.0
         
@@ -70,7 +81,7 @@ class ExecutiveOrchestrator:
             self.logger.info(f"--- 🔄 Cycle {attempt + 1} ---")
             
             # Execute
-            updated_tasks = await self.executor.execute_dag(tasks)
+            updated_tasks = await self.executor.execute_dag(run_id, tasks)
             
             # Check Results
             failed_tasks = [t.id for t in updated_tasks.values() if t.status == TaskStatus.FAILED]
@@ -80,7 +91,9 @@ class ExecutiveOrchestrator:
             passed, score, feedback = await self.critic.evaluate(objective, results_summary)
             
             if passed and not failed_tasks:
+                self._update_run_status(run_id, RunStatus.COMPLETED, score=score, feedback=feedback)
                 return {
+                    "run_id": run_id,
                     "status": "success",
                     "result": results_summary,
                     "score": score,
@@ -98,22 +111,40 @@ class ExecutiveOrchestrator:
                     self.logger.error(f"Refinement failed: {e}")
                     break
         
+        self._update_run_status(run_id, RunStatus.FAILED, score=critic_score, feedback=feedback)
         return {
+            "run_id": run_id,
             "status": "failed",
             "reason": "Max retries exceeded",
             "score": critic_score,
             "feedback": feedback
         }
 
-    # --- Tool Implementations ---
-    async def _tool_web_search(self, args: Dict[str, Any]) -> str:
-        return f"[ SEARCH ]: Simulated results for '{args.get('description')}'"
+    # --- Persistence Methods ---
+    def _create_run_record(self, objective: str, autonomy: str) -> int:
+        with Session(db_engine) as session:
+            run = Run(objective=objective, autonomy_level=autonomy, status=RunStatus.QUEUED)
+            session.add(run)
+            session.commit()
+            session.refresh(run)
+            return run.id
 
-    async def _tool_summarize(self, args: Dict[str, Any]) -> str:
-        return "[ SUMMARIZE ]: Data condensed successfully."
+    def _update_run_status(self, run_id: int, status: str, score: float = 0.0, feedback: str = None):
+        with Session(db_engine) as session:
+            run = session.get(Run, run_id)
+            if run:
+                run.status = status
+                if status in [RunStatus.COMPLETED, RunStatus.FAILED]:
+                    run.completed_at = datetime.utcnow()
+                if score: run.score = score
+                if feedback: run.feedback = feedback
+                session.add(run)
+                session.commit()
 
-    async def _tool_analyze(self, args: Dict[str, Any]) -> str:
-        return "[ ANALYZE ]: Patterns detected within nominal variance."
-
-    async def _tool_system_query(self, args: Dict[str, Any]) -> str:
-        return "[ SYSTEM ]: All systems nominal."
+    def _save_manifest(self, run_id: int, signature: str):
+        with Session(db_engine) as session:
+            run = session.get(Run, run_id)
+            if run:
+                run.manifest_signature = signature
+                session.add(run)
+                session.commit()

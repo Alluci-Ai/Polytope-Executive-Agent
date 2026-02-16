@@ -4,7 +4,6 @@ import logging
 from typing import List, Optional
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import field_validator
-from cryptography.fernet import Fernet
 
 # Setup structured logging
 logging.basicConfig(
@@ -46,17 +45,11 @@ class Settings(BaseSettings):
     @field_validator("POLYTOPE_MASTER_KEY")
     @classmethod
     def validate_master_key(cls, v: str, info) -> str:
-        """Enforces secure key requirements in production."""
+        """Enforces secure key requirements in all environments."""
         if not v or "PLACEHOLDER" in v:
-            # In development, we can generate an ephemeral key
-            if os.getenv("APP_ENV", "development") == "development":
-                key = Fernet.generate_key().decode()
-                logger.warning("⚠️  SECURITY WARNING: Using ephemeral POLYTOPE_MASTER_KEY. Sessions will not persist.")
-                return key
-            else:
-                # Fail fast in production
-                logger.critical("🚨 FATAL: POLYTOPE_MASTER_KEY missing in production environment.")
-                sys.exit(1)
+            # Strict enforcement: No auto-generation allowed.
+            logger.critical("🚨 FATAL: POLYTOPE_MASTER_KEY must be set in .env or environment variables.")
+            sys.exit(1)
         return v
 
     @field_validator("GEMINI_API_KEY")
