@@ -138,7 +138,7 @@
 ---
 
 <div id="security-trust">
->Security & Trust Protocol</h2>
+<h2>Security & Trust Protocol</h2>
   <ul>
     <li><strong>ONE_TOUCH_LOGIN:</strong> Enabled for FaceID/TouchID verified platforms.</li>
     <li><strong>E2E_ENCRYPTION:</strong> Mandatory for iMessage, Signal, and WhatsApp bridges.</li>
