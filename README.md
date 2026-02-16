@@ -112,7 +112,7 @@
       <li><strong>ElevenLabs Music:</strong> High-resolution instrument and vocal synthesis.</li>
       <li><strong>Stable Audio:</strong> Stability AI-driven custom soundscapes.</li>
       <li><strong>Soundverse:</strong> Functional audio generation for professional workflows.</li>
-       <li><strong>Audio:</strong> Full vocal, music and melodic composition.</li>
+       <li><strong>Udio:</strong> Full vocal, music and melodic composition.</li>
 
 
    <h4>4. IMAGE_MANIFESTATION</h4>
