@@ -1,51 +1,75 @@
-
 import os
 import sys
 import logging
-from typing import List
-from pydantic_settings import BaseSettings
-from pydantic import ValidationError, field_validator, ValidationInfo
+from typing import List, Optional
+from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import field_validator
+from cryptography.fernet import Fernet
 
-# Setup simplified logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+# Setup structured logging
+logging.basicConfig(
+    level=logging.INFO, 
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger("PolytopeConfig")
 
 class Settings(BaseSettings):
-    # Security
+    # Deployment Environment
+    APP_ENV: str = "development"  # development, production, local_sovereign
+    
+    # Security & Sovereignty
     POLYTOPE_MASTER_KEY: str
+    VERUS_ID_IDENTITY: Optional[str] = None
+    VERUS_ID_PRIVATE_KEY: Optional[str] = None
+    
+    # Model Providers
     GEMINI_API_KEY: str
-    OPENAI_API_KEY: str
-    ANTHROPIC_API_KEY: str
+    OPENAI_API_KEY: Optional[str] = None
+    ANTHROPIC_API_KEY: Optional[str] = None
     
     # Network
     HOST: str = "0.0.0.0"
     PORT: int = 8000
     ALLOWED_ORIGINS: List[str] = ["http://localhost:3000", "http://127.0.0.1:3000"]
     
-    # Execution Limits
+    # Execution Governance
     MAX_AUTONOMY_RETRIES: int = 3
-    CRITIC_THRESHOLD: float = 0.8
+    CRITIC_THRESHOLD: float = 0.75
+    MAX_CONCURRENT_TASKS: int = 5
 
-    @field_validator("POLYTOPE_MASTER_KEY", "GEMINI_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY")
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore"
+    )
+
+    @field_validator("POLYTOPE_MASTER_KEY")
     @classmethod
-    def check_not_empty(cls, v: str, info: ValidationInfo) -> str:
-        if not v or not v.strip():
-            raise ValueError(f"{info.field_name} cannot be empty.")
-        if "PLACEHOLDER" in v:
-             raise ValueError(f"{info.field_name} contains placeholder text. Please update your configuration.")
+    def validate_master_key(cls, v: str, info) -> str:
+        """Enforces secure key requirements in production."""
+        if not v or "PLACEHOLDER" in v:
+            # In development, we can generate an ephemeral key
+            if os.getenv("APP_ENV", "development") == "development":
+                key = Fernet.generate_key().decode()
+                logger.warning("⚠️  SECURITY WARNING: Using ephemeral POLYTOPE_MASTER_KEY. Sessions will not persist.")
+                return key
+            else:
+                # Fail fast in production
+                logger.critical("🚨 FATAL: POLYTOPE_MASTER_KEY missing in production environment.")
+                sys.exit(1)
         return v
 
-    class Config:
-        env_file = ".env"
-        case_sensitive = True
+    @field_validator("GEMINI_API_KEY")
+    @classmethod
+    def validate_api_key(cls, v: str) -> str:
+        if not v or "PLACEHOLDER" in v:
+            logger.critical("🚨 FATAL: GEMINI_API_KEY is required for the Inference Engine.")
+            sys.exit(1)
+        return v
 
 def load_settings() -> Settings:
     try:
-        settings = Settings()
-        return settings
-    except ValidationError as e:
-        logger.critical("--- [ FATAL ] CONFIGURATION ERROR ---")
-        logger.critical("The Polytope Daemon cannot start due to missing or invalid security keys.")
-        logger.critical(f"Details: {e}")
-        logger.critical("Please set POLYTOPE_MASTER_KEY, GEMINI_API_KEY, OPENAI_API_KEY, and ANTHROPIC_API_KEY in your environment.")
+        return Settings()
+    except Exception as e:
+        logger.critical(f"Configuration Load Failed: {e}")
         sys.exit(1)

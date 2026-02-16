@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef, useCallback, useLayoutEffect } from 'react';
 import { 
   AlluciGeminiService, 
@@ -119,9 +118,11 @@ const TaskPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
       if (priorityFilter !== 'ALL') params.append('priority', priorityFilter);
       if (timelineFilter !== 'ALL') params.append('timeline', timelineFilter);
 
-      const res = await fetch(`${DAEMON_URL}/tasks?${params.toString()}`);
-      if (res.ok) setTasks(await res.json());
-    } catch (e) { console.error(e); }
+      const res = await fetch(`${DAEMON_URL}/tasks?${params.toString()}`).catch(() => null);
+      if (res && res.ok) setTasks(await res.json());
+    } catch (e) { 
+      // Silently fail if backend is offline
+    }
   }, [statusFilter, priorityFilter, timelineFilter]);
 
   useEffect(() => { fetchTasks(); }, [fetchTasks]);
@@ -668,11 +669,11 @@ const App: React.FC = () => {
       }
     }
     return {
-      llm: { openai: '', anthropic: '', googleCloud: '', groq: '' },
+      llm: { openai: '', anthropic: '', googleCloud: '', groq: '', deepseek: '' },
       audio: { openaiRealtime: '', elevenLabsAgents: '', retellAi: '', inworldAi: '' },
-      music: { suno: '', elevenLabsMusic: '', stableAudio: '', soundverse: '' },
-      image: { openaiDalle: '', falAi: '', midjourney: '', adobeFirefly: '' },
-      video: { runway: '', luma: '', heygen: '', livepeer: '' }
+      music: { suno: '', elevenLabsMusic: '', stableAudio: '', soundverse: '', udio: '' },
+      image: { openaiDalle: '', falAi: '', midjourney: '', adobeFirefly: '', googleNanoBanana: '' },
+      video: { runway: '', luma: '', heygen: '', livepeer: '', googleVeo: '' }
     };
   });
 
@@ -1227,13 +1228,14 @@ const App: React.FC = () => {
                             { id: 'openai', label: 'OpenAI (GPT-5.1 / o1)' },
                             { id: 'anthropic', label: 'Anthropic (Claude 4.5 / 4.6)' },
                             { id: 'googleCloud', label: 'Google Cloud (Gemini 3)' },
-                            { id: 'groq', label: 'Groq (High-Speed)' }
+                            { id: 'groq', label: 'Groq (High-Speed)' },
+                            { id: 'deepseek', label: 'DeepSeek (R1 / V3)' }
                           ].map(item => (
                             <div key={item.id} className="space-y-2">
                               <label className="text-[7px] baunk-style opacity-50 block">{item.label}</label>
                               <input 
                                 type="password" 
-                                value={apiKeys.llm[item.id as keyof typeof apiKeys.llm]}
+                                value={apiKeys.llm[item.id as keyof typeof apiKeys.llm] ?? ''}
                                 onChange={(e) => updateApiKey('llm', item.id, e.target.value)}
                                 placeholder="ENTER_TOKEN..."
                                 className="w-full bg-zinc/5 border border-zinc/20 p-2 text-[9px] font-mono focus:border-agent outline-none"
@@ -1271,7 +1273,8 @@ const App: React.FC = () => {
                             { id: 'suno', label: 'Suno API (Vocals/Melody)' },
                             { id: 'elevenLabsMusic', label: 'ElevenLabs Music API' },
                             { id: 'stableAudio', label: 'Stable Audio (Stability AI)' },
-                            { id: 'soundverse', label: 'Soundverse (functional)' }
+                            { id: 'soundverse', label: 'Soundverse (functional)' },
+                            { id: 'udio', label: 'Udio (High Fidelity)' }
                           ].map(item => (
                             <div key={item.id} className="space-y-2">
                               <label className="text-[7px] baunk-style opacity-50 block">{item.label}</label>
@@ -1293,7 +1296,8 @@ const App: React.FC = () => {
                             { id: 'openaiDalle', label: 'OpenAI (DALL·E 3)' },
                             { id: 'falAi', label: 'Fal.ai (Fast Diffusion)' },
                             { id: 'midjourney', label: 'Midjourney (Alpha API)' },
-                            { id: 'adobeFirefly', label: 'Adobe Firefly API' }
+                            { id: 'adobeFirefly', label: 'Adobe Firefly API' },
+                            { id: 'googleNanoBanana', label: 'Google (Nano Banana)' }
                           ].map(item => (
                             <div key={item.id} className="space-y-2">
                               <label className="text-[7px] baunk-style opacity-50 block">{item.label}</label>
@@ -1315,7 +1319,8 @@ const App: React.FC = () => {
                             { id: 'runway', label: 'Runway (Gen-4.5)' },
                             { id: 'luma', label: 'Luma Dream Machine' },
                             { id: 'heygen', label: 'HeyGen / Synthesia' },
-                            { id: 'livepeer', label: 'Livepeer (Decentralized)' }
+                            { id: 'livepeer', label: 'Livepeer (Decentralized)' },
+                            { id: 'googleVeo', label: 'Google (Veo)' }
                           ].map(item => (
                             <div key={item.id} className="space-y-2">
                               <label className="text-[7px] baunk-style opacity-50 block">{item.label}</label>
