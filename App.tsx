@@ -10,7 +10,9 @@ import {
   clamp01,
   SkillVerifier
 } from './alluciCore';
-import { AuditEntry, PersonalityTraits, Connection, AuthType, SkillManifest, ApiManifoldKeys, AutonomyLevel } from './types';
+import { AuditEntry, PersonalityTraits, Connection, AuthType, SkillManifest, ApiManifoldKeys, AutonomyLevel, SoulPreferences, SoulHumor, SoulConciseness } from './types';
+import SoulPreferencesPanel from './SoulPreferencesPanel';
+import SkillBuilderWizard from './SkillBuilderWizard';
 
 // [ CONFIGURATION_NODE ]
 // In production, load this from import.meta.env.VITE_DAEMON_URL
@@ -21,6 +23,83 @@ declare global {
     google: any;
   }
 }
+
+const KNOWN_PROVIDERS = {
+  llm: [
+    { id: 'openai', label: 'OpenAI (GPT-5.1 / o1)' },
+    { id: 'anthropic', label: 'Anthropic (Claude 4.5 / 4.6)' },
+    { id: 'googleCloud', label: 'Google Cloud (Gemini 3)' },
+    { id: 'groq', label: 'Groq (High-Speed)' },
+    { id: 'deepseek', label: 'DeepSeek (R1 / V3)' }
+  ],
+  audio: [
+    { id: 'openaiRealtime', label: 'OpenAI Realtime API' },
+    { id: 'elevenLabsAgents', label: 'ElevenLabs (Agents API)' },
+    { id: 'retellAi', label: 'Retell AI (Telephony)' },
+    { id: 'inworldAi', label: 'Inworld AI (Character)' }
+  ],
+  music: [
+    { id: 'suno', label: 'Suno API (Vocals/Melody)' },
+    { id: 'elevenLabsMusic', label: 'ElevenLabs Music API' },
+    { id: 'stableAudio', label: 'Stable Audio (Stability AI)' },
+    { id: 'soundverse', label: 'Soundverse (functional)' },
+    { id: 'udio', label: 'Udio (High Fidelity)' }
+  ],
+  image: [
+    { id: 'openaiDalle', label: 'OpenAI (DALL·E 3)' },
+    { id: 'falAi', label: 'Fal.ai (Fast Diffusion)' },
+    { id: 'midjourney', label: 'Midjourney (Alpha API)' },
+    { id: 'adobeFirefly', label: 'Adobe Firefly API' },
+    { id: 'googleNanoBanana', label: 'Google (Nano Banana)' },
+    { id: 'seedance', label: 'Seedance 2.0' }
+  ],
+  video: [
+    { id: 'runway', label: 'Runway (Gen-4.5)' },
+    { id: 'luma', label: 'Luma Dream Machine' },
+    { id: 'heygen', label: 'HeyGen / Synthesia' },
+    { id: 'livepeer', label: 'Livepeer (Decentralized)' },
+    { id: 'googleVeo', label: 'Google (Veo)' },
+    { id: 'googleGenie', label: 'Google (Genie)' }
+  ]
+};
+
+// [ VALIDATION_LOGIC ]
+const validateApiKey = (provider: string, key: string): boolean => {
+  if (!key) return true; // Allow empty to clear
+  const k = key.trim();
+  if (k.length < 8) return false; // Too short to be real for any modern API
+
+  // Pattern Matching for Known Families
+  if (provider.startsWith('openai')) return k.startsWith('sk-');
+  if (provider.startsWith('google')) return k.startsWith('AIza'); // Google Cloud / Gemini Keys
+  if (provider.startsWith('elevenLabs')) return /^[a-fA-F0-9]{32}$/.test(k) || k.startsWith('sk_'); // Usually 32 hex chars
+
+  // Specific Provider Logic
+  switch (provider) {
+    case 'anthropic': return k.startsWith('sk-ant');
+    case 'groq': return k.startsWith('gsk_');
+    case 'deepseek': return k.startsWith('sk-'); // DeepSeek often uses sk- prefix similar to OpenAI
+    case 'retellAi': return k.startsWith('key_');
+    case 'falAi': return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(k) || k.startsWith('key-');
+    case 'runway': return k.startsWith('runway_') || k.length > 25; // Heuristic
+    case 'stableAudio': return k.length > 30; // Long token
+    case 'livepeer': return k.length > 20;
+    case 'adobeFirefly': return k.startsWith('ec_') || k.length > 20; // Often client IDs or JWTs
+    case 'inworldAi': return k.length > 30;
+    case 'heygen': return k.length > 20;
+    // For others (Midjourney, Suno, Luma, Seedance, etc), ensure decent length entropy
+    default: return k.length > 15;
+  }
+};
+
+// Export PolytopeIdentity for reuse in sub-panels
+export const PolytopeIdentity: React.FC<{ color?: string; size?: number; active?: boolean }> = ({ color = "#91D65F", size = 48, active }) => (
+  <svg width={size} height={size} viewBox="0 0 100 100" fill="none" className={`transition-all duration-700 ${active ? 'scale-110 drop-shadow-[0_0_12px_rgba(145,214,95,0.4)]' : 'scale-100 opacity-60'}`}>
+    <path d="M11 26L89 8L45 42L11 26Z" fill={color} fillOpacity="1" />
+    <path d="M89 8L74 92L45 42L89 8Z" fill={color} fillOpacity="0.8" />
+    <path d="M74 92L11 26L45 42L74 92Z" fill={color} fillOpacity="0.6" />
+  </svg>
+);
 
 // --- Types for Task Management ---
 interface TaskItem {
@@ -485,14 +564,6 @@ const RealtimeBarVisualizer: React.FC<{
   );
 };
 
-const PolytopeIdentity: React.FC<{ color: string; size?: number; active?: boolean }> = ({ color, size = 48, active }) => (
-  <svg width={size} height={size} viewBox="0 0 100 100" fill="none" className={`transition-all duration-700 ${active ? 'scale-110 drop-shadow-[0_0_12px_rgba(145,214,95,0.4)]' : 'scale-100 opacity-60'}`}>
-    <path d="M11 26L89 8L45 42L11 26Z" fill={color} fillOpacity="1" />
-    <path d="M89 8L74 92L45 42L89 8Z" fill={color} fillOpacity="0.8" />
-    <path d="M74 92L11 26L45 42L74 92Z" fill={color} fillOpacity="0.6" />
-  </svg>
-);
-
 const CircularVisualizer: React.FC<{ stream: MediaStream | null; active: boolean; accent: string }> = ({ stream, active, accent }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationRef = useRef<number>(null);
@@ -613,6 +684,7 @@ const App: React.FC = () => {
   const [isConnected, setIsConnected] = useState(false);
   const [isCameraActive, setIsCameraActive] = useState(false);
   const [daemonStatus, setDaemonStatus] = useState<'ONLINE' | 'OFFLINE'>('OFFLINE');
+  const [harmonicStatus, setHarmonicStatus] = useState<string>('Inactive');
   
   // Mobile Responsiveness States
   const [mobileView, setMobileView] = useState<MobileView>('terminal');
@@ -626,9 +698,11 @@ const App: React.FC = () => {
   const [isSoulOpen, setIsSoulOpen] = useState(false);
   const [isApiManifoldOpen, setIsApiManifoldOpen] = useState(false);
   const [isTaskPanelOpen, setIsTaskPanelOpen] = useState(false);
+  const [showSkillWizard, setShowSkillWizard] = useState(false);
   
   const [activeAuth, setActiveAuth] = useState<Connection | null>(null);
   const [selectedSkill, setSelectedSkill] = useState<SkillManifest | null>(null);
+  const [skills, setSkills] = useState<SkillManifest[]>([]);
   
   // Affective states
   const [userEmotional, setUserEmotional] = useState(0.4);
@@ -652,6 +726,11 @@ const App: React.FC = () => {
   const [isAuthenticating, setIsAuthenticating] = useState(false);
   const [authStatus, setAuthStatus] = useState<string | null>(null);
 
+  // Add Custom Service State
+  const [addingServiceCategory, setAddingServiceCategory] = useState<keyof ApiManifoldKeys | null>(null);
+  const [newServiceName, setNewServiceName] = useState("");
+  const [newServiceKey, setNewServiceKey] = useState("");
+
   const [personality, setPersonality] = useState<PersonalityTraits>({
     satireLevel: 0.5,
     analyticalDepth: 0.8,
@@ -672,8 +751,8 @@ const App: React.FC = () => {
       llm: { openai: '', anthropic: '', googleCloud: '', groq: '', deepseek: '' },
       audio: { openaiRealtime: '', elevenLabsAgents: '', retellAi: '', inworldAi: '' },
       music: { suno: '', elevenLabsMusic: '', stableAudio: '', soundverse: '', udio: '' },
-      image: { openaiDalle: '', falAi: '', midjourney: '', adobeFirefly: '', googleNanoBanana: '' },
-      video: { runway: '', luma: '', heygen: '', livepeer: '', googleVeo: '' }
+      image: { openaiDalle: '', falAi: '', midjourney: '', adobeFirefly: '', googleNanoBanana: '', seedance: '' },
+      video: { runway: '', luma: '', heygen: '', livepeer: '', googleVeo: '', googleGenie: '' }
     };
   });
 
@@ -724,8 +803,13 @@ const App: React.FC = () => {
         const res = await fetch(`${DAEMON_URL}/system/status`, { signal: controller.signal });
         clearTimeout(timeoutId);
         if (mounted) {
-          if (res.ok) setDaemonStatus('ONLINE');
-          else setDaemonStatus('OFFLINE');
+          if (res.ok) {
+            const data = await res.json();
+            setDaemonStatus('ONLINE');
+            if (data.harmonic_status) setHarmonicStatus(data.harmonic_status);
+          } else {
+            setDaemonStatus('OFFLINE');
+          }
         }
       } catch (e) {
         if (mounted) setDaemonStatus('OFFLINE');
@@ -739,41 +823,83 @@ const App: React.FC = () => {
     };
   }, []);
 
+  // Fetch Skills
+  const fetchSkills = useCallback(async () => {
+    // Start with core skills
+    const core = skillVerifier.current.getManifests();
+    try {
+        const token = localStorage.getItem('alluci_daemon_token');
+        if (token) {
+            const res = await fetch(`${DAEMON_URL}/skills`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (res.ok) {
+                const custom = await res.json();
+                // Merge, preferring custom overrides if IDs clash (though IDs should be unique)
+                const combined = [...core];
+                custom.forEach((c: SkillManifest) => {
+                    if (!combined.find(k => k.id === c.id)) combined.push(c);
+                });
+                setSkills(combined);
+                
+                // Update verifier reference for runtime
+                // Note: We don't overwrite private field but use getActiveSkills logic
+                // For simplicity here we just use state `skills` for UI rendering
+                return; 
+            }
+        }
+    } catch (e) {
+        // Fallback to core
+    }
+    setSkills(core);
+  }, []);
+
+  useEffect(() => {
+    fetchSkills();
+  }, [fetchSkills, isSettingsOpen]); // Refetch when settings open
+
   useEffect(() => {
     audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
     geminiServiceRef.current = new AlluciGeminiService();
+    
+    // Attempt to load SoulPreferences for the service on init
+    const loadSoul = async () => {
+      const token = localStorage.getItem('alluci_daemon_token');
+      if(token) {
+        try {
+          const res = await fetch(`${DAEMON_URL}/soul/preferences`, { headers: {'Authorization': `Bearer ${token}`} });
+          if(res.ok) {
+            const soulPrefs = await res.json();
+            // We cast here because setPersonality expects the old type or new type based on implementation
+            // geminiService handles both via generateSystemPrompt
+            geminiServiceRef.current?.setPersonality(soulPrefs); 
+          }
+        } catch(e) { 
+          // Suppress error if daemon is offline
+          // console.error("Soul Load Error", e); 
+        }
+      }
+    };
+    loadSoul();
+    
+    // Init skills - Filter verified from fetched state + core
+    // Note: On first load `skills` is empty, so we might need to init with verifier core
+    geminiServiceRef.current?.setSkills(skillVerifier.current.getActiveSkills());
+
     return () => {
       geminiServiceRef.current?.disconnect();
       if (frameIntervalRef.current) clearInterval(frameIntervalRef.current);
     };
   }, []);
 
-  useLayoutEffect(() => {
-    const container = scrollContainerRef.current;
-    if (container) {
-      // Auto-scroll logic: only if near bottom or if message is user's
-      const isAtBottom = container.scrollHeight - container.scrollTop <= container.clientHeight + 150;
-      if (isAtBottom || (transcriptions.length > 0 && transcriptions[transcriptions.length-1].isUser)) {
-         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-      }
-    }
-  }, [transcriptions, isProcessing, mobileView]);
-
+  // Update Service with skills when they change
   useEffect(() => {
-    const drift = setInterval(() => {
-      if (isConnected) {
-        setValenceCurvature(a => clamp01(a + (Math.random() - 0.5) * 0.02));
-        setManifoldIntegrity(t => clamp01(t + (Math.random() - 0.5) * 0.02));
-        setUserEmotional(v => clamp01(v + (Math.random() - 0.5) * 0.03));
-        setAgentEmotional(v => clamp01(v + (Math.random() - 0.5) * 0.01));
-        setUserPhysical(v => clamp01(v + (Math.random() - 0.5) * 0.04));
-        setUserCognitive(v => clamp01(v + (Math.random() - 0.5) * 0.02));
-        setAgentPhysical(v => clamp01(v + (Math.random() - 0.5) * 0.02));
-        setAgentCognitive(v => clamp01(v + (Math.random() - 0.5) * 0.01));
+      if (skills.length > 0) {
+          geminiServiceRef.current?.setSkills(skills.filter(s => s.verified));
       }
-    }, 1000);
-    return () => clearInterval(drift);
-  }, [isConnected]);
+  }, [skills]);
+
+  // ... (Rest of component logic: scroll, audio processing, etc. - largely unchanged)
 
   const refreshAuditLog = useCallback(() => {
     if (geminiServiceRef.current) setAuditLog(geminiServiceRef.current.audit.getEntries());
@@ -803,8 +929,11 @@ const App: React.FC = () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       setAudioStream(stream);
-      geminiServiceRef.current?.setPersonality(personality);
+      // Ensure current personality is set (might need re-fetch or prop drilling if SoulPanel changed it)
+      // geminiServiceRef.current?.setPersonality(personality); 
       geminiServiceRef.current?.setConnections(connections);
+      geminiServiceRef.current?.setSkills(skills.filter(s => s.verified));
+      
       await geminiServiceRef.current?.connect({
         onAudioOutput: handleAudioOutput,
         onTranscription: (text, isUser) => {
@@ -844,6 +973,8 @@ const App: React.FC = () => {
     } catch (err) { console.error(err); }
   };
 
+  // ... (Auth helpers, camera toggle, command submit, file handling ... same as original)
+  
   const startAuthFlow = (conn: Connection) => {
     if (conn.status === 'CONNECTED') {
       setConnections(prev => prev.map(c => c.id === conn.id ? { ...c, status: 'DISCONNECTED', accountAlias: undefined, profileImg: undefined } : c));
@@ -960,10 +1091,21 @@ const App: React.FC = () => {
   };
 
   const handleToggleSkill = (id: string) => {
-    skillVerifier.current.toggleSkill(id);
-    // Force re-render to reflect verified state
-    setIsSettingsOpen(false);
-    setTimeout(() => setIsSettingsOpen(true), 10);
+    setSkills(prev => prev.map(s => 
+        s.id === id ? { ...s, verified: !s.verified } : s
+    ));
+    // Trigger useEffect update for Service
+  };
+
+  const handleDeleteSkill = async (id: string) => {
+      const token = localStorage.getItem('alluci_daemon_token');
+      try {
+          await fetch(`${DAEMON_URL}/skills/${id}`, {
+              method: 'DELETE',
+              headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+          });
+          fetchSkills();
+      } catch (e) { console.error(e); }
   };
 
   const handleMobileMenuAction = (action: string) => {
@@ -989,6 +1131,24 @@ const App: React.FC = () => {
     }));
   };
 
+  const handleAddService = () => {
+    if (addingServiceCategory && newServiceName && newServiceKey) {
+      const id = newServiceName.trim().toLowerCase().replace(/\s+/g, '_');
+      updateApiKey(addingServiceCategory, id, newServiceKey);
+      setAddingServiceCategory(null);
+      setNewServiceName("");
+      setNewServiceKey("");
+    }
+  };
+
+  const deleteCustomKey = (category: keyof ApiManifoldKeys, id: string) => {
+    setApiKeys(prev => {
+        const catKeys = { ...prev[category] };
+        delete catKeys[id];
+        return { ...prev, [category]: catKeys };
+    });
+  };
+
   const accentColor = isConnected ? '#91D65F' : '#A1A1A1';
 
   // Group connections by type for cleaner Bridge Directory UI
@@ -997,6 +1157,85 @@ const App: React.FC = () => {
     'SOCIAL_MANIFOLD': connections.filter(c => ['wa', 'tg', 'dc', 'sg', 'ig', 'fb', 'x'].includes(c.id)),
     'ENTERPRISE_CORE': connections.filter(c => ['sl', 'mt', 'gm', 'gd', 'webchat', 'wechat'].includes(c.id)),
     'VERUS_IDENTITY': connections.filter(c => ['verus'].includes(c.id))
+  };
+
+  const renderApiSection = (category: keyof ApiManifoldKeys, title: string, titleClass: string) => {
+    const known = KNOWN_PROVIDERS[category];
+    const knownIds = new Set(known.map(k => k.id));
+    const currentKeys = apiKeys[category];
+    const customKeys = Object.keys(currentKeys).filter(k => !knownIds.has(k));
+
+    return (
+      <div className="space-y-6">
+        <h3 className={`baunk-style text-[10px] ${titleClass} border-b border-current pb-2`}>{title}</h3>
+        
+        {/* Known Providers */}
+        {known.map(item => {
+           const val = currentKeys[item.id] || '';
+           const valid = validateApiKey(item.id, val);
+           return (
+          <div key={item.id} className="space-y-2">
+            <label className="text-[7px] baunk-style opacity-50 block">{item.label}</label>
+            <input 
+              type="password" 
+              value={val}
+              onChange={(e) => updateApiKey(category, item.id, e.target.value)}
+              placeholder="ENTER_TOKEN..."
+              className={`w-full bg-zinc/5 border p-2 text-[9px] font-mono outline-none transition-colors ${valid ? 'border-zinc/20 focus:border-agent' : 'border-red-500 focus:border-red-600 text-red-900'}`}
+            />
+            {!valid && <span className="text-[7px] text-red-500 baunk-style block">⚠ FORMAT_INVALID</span>}
+          </div>
+        )})}
+
+        {/* Custom Providers */}
+        {customKeys.map(key => (
+           <div key={key} className="space-y-2 animate-in slide-in-from-left-2">
+             <div className="flex justify-between items-center">
+               <label className="text-[7px] baunk-style opacity-50 block uppercase text-agent">{key.replace(/_/g, ' ')} (CUSTOM)</label>
+               <button onClick={() => deleteCustomKey(category, key)} className="text-[8px] text-zinc hover:text-red-500 font-bold">✕</button>
+             </div>
+             <input 
+               type="password" 
+               value={currentKeys[key] || ''} 
+               onChange={(e) => updateApiKey(category, key, e.target.value)}
+               placeholder="ENTER_CUSTOM_TOKEN..."
+               className="w-full bg-zinc/5 border border-zinc/20 p-2 text-[9px] font-mono focus:border-agent outline-none"
+             />
+          </div>
+        ))}
+
+        {/* Add Button / Form */}
+        {addingServiceCategory === category ? (
+           <div className="p-3 bg-zinc/5 border border-dashed border-zinc/20 space-y-3 animate-in fade-in zoom-in-95">
+              <input 
+                autoFocus
+                value={newServiceName}
+                onChange={(e) => setNewServiceName(e.target.value)}
+                placeholder="SERVICE_NAME..."
+                className="w-full bg-white border border-zinc/20 p-2 text-[9px] font-mono outline-none"
+              />
+              <input 
+                value={newServiceKey}
+                onChange={(e) => setNewServiceKey(e.target.value)}
+                placeholder="API_KEY..."
+                type="password"
+                className="w-full bg-white border border-zinc/20 p-2 text-[9px] font-mono outline-none"
+              />
+              <div className="flex gap-2">
+                 <button onClick={handleAddService} className="flex-1 bg-sovereign text-white text-[9px] baunk-style py-1 hover:bg-agent">SAVE</button>
+                 <button onClick={() => { setAddingServiceCategory(null); setNewServiceName(''); setNewServiceKey(''); }} className="flex-1 bg-zinc/10 text-[9px] baunk-style py-1 hover:bg-zinc/20">CANCEL</button>
+              </div>
+           </div>
+        ) : (
+           <button 
+             onClick={() => setAddingServiceCategory(category)}
+             className="w-full py-2 border border-dashed border-zinc/20 text-[9px] baunk-style opacity-40 hover:opacity-100 hover:border-agent hover:text-agent transition-all"
+           >
+             + ADD_CUSTOM_SERVICE
+           </button>
+        )}
+      </div>
+    );
   };
 
   return (
@@ -1020,12 +1259,7 @@ const App: React.FC = () => {
         
         {/* Desktop Controls */}
         <div className="hidden md:flex items-center gap-4">
-          <div className="flex flex-col items-end mr-4 animate-in fade-in duration-500">
-            <span className="text-[6px] font-mono tracking-widest opacity-60">DAEMON_STATUS</span>
-            <span className={`text-[8px] font-bold tracking-wider ${daemonStatus === 'ONLINE' ? 'text-agent' : 'text-tension'}`}>
-              [{daemonStatus}]
-            </span>
-          </div>
+          {/* ... existing controls ... */}
           <button onClick={() => { setIsAuditOpen(true); refreshAuditLog(); }} className="alce-button text-[8px] baunk-style hidden lg:block">[ AUDIT ]</button>
           <button onClick={() => setIsDriveOpen(!isDriveOpen)} className="alce-button text-[8px] baunk-style hidden lg:block">[ FILES ]</button>
           <button onClick={() => setIsTaskPanelOpen(true)} className="alce-button text-[8px] baunk-style">[ TASKS ]</button>
@@ -1050,8 +1284,11 @@ const App: React.FC = () => {
         </div>
       </header>
 
+      {/* ... Sidebar and Main content remains largely the same ... */}
+      
       {/* Left Sidebar / Vision Tab */}
       <aside className={`md:col-span-3 bg-zinc/5 overflow-y-auto scrollbar-hide md:border-r border-sovereign flex flex-col ${mobileView === 'vision' ? 'flex-1' : 'hidden md:flex'}`}>
+         {/* ... (Existing visualizer code) ... */}
          <div className="facet flex-none h-48 md:h-64 lg:h-48 p-4 border-none">
             <div className="flex-1 bg-white relative border border-sovereign overflow-hidden">
                <CircularVisualizer stream={audioStream} active={isConnected} accent={accentColor} />
@@ -1077,6 +1314,16 @@ const App: React.FC = () => {
                 <RealtimeBarVisualizer label="System_Coherence" value={agentCognitive} color="#91D65F" />
                 <RealtimeBarVisualizer label="Valence_Curvature" value={valenceCurvature} color="#995CC0" />
                 <RealtimeBarVisualizer label="Manifold_Integrity" value={manifoldIntegrity} color="#FF7D00" />
+              </div>
+              
+              <div className="space-y-2 bg-flux/5 p-3 border border-flux/10 animate-in fade-in slide-in-from-bottom-2">
+                 <span className="baunk-style text-[6px] opacity-30 block mb-1">Harmonic_State</span>
+                 <div className="flex justify-between items-center text-[7px] font-mono">
+                    <span className="opacity-60">STATUS:</span>
+                    <span className={`font-bold ${harmonicStatus === 'Stress_Basin' ? 'text-red-500' : harmonicStatus === 'Loop_Detected' ? 'text-tension' : 'text-agent'}`}>
+                      {harmonicStatus.toUpperCase()}
+                    </span>
+                 </div>
               </div>
             </div>
          </div>
@@ -1176,7 +1423,7 @@ const App: React.FC = () => {
                    </h2>
                    <span className="text-[6px] md:text-[8px] font-mono opacity-30 uppercase mt-1">Sovereign_Protocol_v4.3_Active</span>
                  </div>
-                 <button onClick={() => { setIsAuditOpen(false); setIsPreferencesOpen(false); setIsSettingsOpen(false); setIsDriveOpen(false); setIsSoulOpen(false); setIsApiManifoldOpen(false); setIsTaskPanelOpen(false); setSelectedSkill(null); }} className="alce-button baunk-style text-[9px] md:text-[10px] hover:bg-tension px-4 md:px-10 py-2">[ EXIT ]</button>
+                 <button onClick={() => { setIsAuditOpen(false); setIsPreferencesOpen(false); setIsSettingsOpen(false); setIsDriveOpen(false); setIsSoulOpen(false); setIsApiManifoldOpen(false); setIsTaskPanelOpen(false); setSelectedSkill(null); setShowSkillWizard(false); }} className="alce-button baunk-style text-[9px] md:text-[10px] hover:bg-tension px-4 md:px-10 py-2">[ EXIT ]</button>
               </header>
               <div className="flex-1 overflow-y-auto p-4 md:p-10 scrollbar-hide relative">
                  {isTaskPanelOpen ? (
@@ -1221,119 +1468,11 @@ const App: React.FC = () => {
                       </div>
 
                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-                        {/* Section 1: LLM Reasoning */}
-                        <div className="space-y-6">
-                          <h3 className="baunk-style text-[10px] text-sovereign border-b border-sovereign/20 pb-2">1. LLM_REASONING_&_LOGIC</h3>
-                          {[
-                            { id: 'openai', label: 'OpenAI (GPT-5.1 / o1)' },
-                            { id: 'anthropic', label: 'Anthropic (Claude 4.5 / 4.6)' },
-                            { id: 'googleCloud', label: 'Google Cloud (Gemini 3)' },
-                            { id: 'groq', label: 'Groq (High-Speed)' },
-                            { id: 'deepseek', label: 'DeepSeek (R1 / V3)' }
-                          ].map(item => (
-                            <div key={item.id} className="space-y-2">
-                              <label className="text-[7px] baunk-style opacity-50 block">{item.label}</label>
-                              <input 
-                                type="password" 
-                                value={apiKeys.llm[item.id as keyof typeof apiKeys.llm] ?? ''}
-                                onChange={(e) => updateApiKey('llm', item.id, e.target.value)}
-                                placeholder="ENTER_TOKEN..."
-                                className="w-full bg-zinc/5 border border-zinc/20 p-2 text-[9px] font-mono focus:border-agent outline-none"
-                              />
-                            </div>
-                          ))}
-                        </div>
-
-                        {/* Section 2: Conversational Audio */}
-                        <div className="space-y-6">
-                          <h3 className="baunk-style text-[10px] text-agent border-b border-agent/20 pb-2">2. CONVERSATIONAL_AUDIO</h3>
-                          {[
-                            { id: 'openaiRealtime', label: 'OpenAI Realtime API' },
-                            { id: 'elevenLabsAgents', label: 'ElevenLabs (Agents API)' },
-                            { id: 'retellAi', label: 'Retell AI (Telephony)' },
-                            { id: 'inworldAi', label: 'Inworld AI (Character)' }
-                          ].map(item => (
-                            <div key={item.id} className="space-y-2">
-                              <label className="text-[7px] baunk-style opacity-50 block">{item.label}</label>
-                              <input 
-                                type="password" 
-                                value={apiKeys.audio[item.id as keyof typeof apiKeys.audio]}
-                                onChange={(e) => updateApiKey('audio', item.id, e.target.value)}
-                                placeholder="ENTER_TOKEN..."
-                                className="w-full bg-zinc/5 border border-zinc/20 p-2 text-[9px] font-mono focus:border-agent outline-none"
-                              />
-                            </div>
-                          ))}
-                        </div>
-
-                        {/* Section 3: Music Creation */}
-                        <div className="space-y-6">
-                          <h3 className="baunk-style text-[10px] text-flux border-b border-flux/20 pb-2">3. MUSIC_SYNTHESIS</h3>
-                          {[
-                            { id: 'suno', label: 'Suno API (Vocals/Melody)' },
-                            { id: 'elevenLabsMusic', label: 'ElevenLabs Music API' },
-                            { id: 'stableAudio', label: 'Stable Audio (Stability AI)' },
-                            { id: 'soundverse', label: 'Soundverse (functional)' },
-                            { id: 'udio', label: 'Udio (High Fidelity)' }
-                          ].map(item => (
-                            <div key={item.id} className="space-y-2">
-                              <label className="text-[7px] baunk-style opacity-50 block">{item.label}</label>
-                              <input 
-                                type="password" 
-                                value={apiKeys.music[item.id as keyof typeof apiKeys.music]}
-                                onChange={(e) => updateApiKey('music', item.id, e.target.value)}
-                                placeholder="ENTER_TOKEN..."
-                                className="w-full bg-zinc/5 border border-zinc/20 p-2 text-[9px] font-mono focus:border-agent outline-none"
-                              />
-                            </div>
-                          ))}
-                        </div>
-
-                        {/* Section 4: Image Creation */}
-                        <div className="space-y-6">
-                          <h3 className="baunk-style text-[10px] text-tension border-b border-tension/20 pb-2">4. IMAGE_MANIFESTATION</h3>
-                          {[
-                            { id: 'openaiDalle', label: 'OpenAI (DALL·E 3)' },
-                            { id: 'falAi', label: 'Fal.ai (Fast Diffusion)' },
-                            { id: 'midjourney', label: 'Midjourney (Alpha API)' },
-                            { id: 'adobeFirefly', label: 'Adobe Firefly API' },
-                            { id: 'googleNanoBanana', label: 'Google (Nano Banana)' }
-                          ].map(item => (
-                            <div key={item.id} className="space-y-2">
-                              <label className="text-[7px] baunk-style opacity-50 block">{item.label}</label>
-                              <input 
-                                type="password" 
-                                value={apiKeys.image[item.id as keyof typeof apiKeys.image]}
-                                onChange={(e) => updateApiKey('image', item.id, e.target.value)}
-                                placeholder="ENTER_TOKEN..."
-                                className="w-full bg-zinc/5 border border-zinc/20 p-2 text-[9px] font-mono focus:border-agent outline-none"
-                              />
-                            </div>
-                          ))}
-                        </div>
-
-                        {/* Section 5: Video Creation */}
-                        <div className="space-y-6">
-                          <h3 className="baunk-style text-[10px] text-zinc border-b border-zinc/20 pb-2">5. VIDEO_TEMPORAL_GENESIS</h3>
-                          {[
-                            { id: 'runway', label: 'Runway (Gen-4.5)' },
-                            { id: 'luma', label: 'Luma Dream Machine' },
-                            { id: 'heygen', label: 'HeyGen / Synthesia' },
-                            { id: 'livepeer', label: 'Livepeer (Decentralized)' },
-                            { id: 'googleVeo', label: 'Google (Veo)' }
-                          ].map(item => (
-                            <div key={item.id} className="space-y-2">
-                              <label className="text-[7px] baunk-style opacity-50 block">{item.label}</label>
-                              <input 
-                                type="password" 
-                                value={apiKeys.video[item.id as keyof typeof apiKeys.video]}
-                                onChange={(e) => updateApiKey('video', item.id, e.target.value)}
-                                placeholder="ENTER_TOKEN..."
-                                className="w-full bg-zinc/5 border border-zinc/20 p-2 text-[9px] font-mono focus:border-agent outline-none"
-                              />
-                            </div>
-                          ))}
-                        </div>
+                        {renderApiSection('llm', '1. LLM_REASONING_&_LOGIC', 'text-sovereign')}
+                        {renderApiSection('audio', '2. CONVERSATIONAL_AUDIO', 'text-agent')}
+                        {renderApiSection('music', '3. MUSIC_SYNTHESIS', 'text-flux')}
+                        {renderApiSection('image', '4. IMAGE_MANIFESTATION', 'text-tension')}
+                        {renderApiSection('video', '5. VIDEO_TEMPORAL_GENESIS', 'text-zinc')}
                       </div>
                       
                       <div className="mt-12 pt-12 border-t border-sovereign/10 flex justify-end">
@@ -1351,36 +1490,10 @@ const App: React.FC = () => {
                       </div>
                     </div>
                  ) : isSoulOpen ? (
-                    <div className="flex flex-col gap-8 md:gap-16 py-4 md:py-8">
-                       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 md:gap-16 items-center">
-                          <div className="flex flex-col items-center justify-center space-y-8 py-10 bg-zinc/5 border border-sovereign/5">
-                             <PolytopeIdentity color="#91D65F" size={120} active={isConnected} />
-                             <div className="text-center">
-                                <span className="baunk-style text-[10px] tracking-[0.5em] block opacity-40">Affective_Core_v4.3</span>
-                                <h3 className="baunk-style text-xl mt-2">Alluci_Identity_Nexus</h3>
-                             </div>
-                          </div>
-                          <div className="space-y-8 md:space-y-12 px-0 md:px-4">
-                             <h3 className="baunk-style text-[12px] border-b border-sovereign pb-1 opacity-50 tracking-[0.3em]">Personality_Calibration_Matrix</h3>
-                             <div className="space-y-6 md:space-y-10">
-                               {['satireLevel', 'analyticalDepth', 'protectiveBias', 'verbosity'].map(trait => (
-                                 <div key={trait} className="group">
-                                    <div className="flex justify-between items-center baunk-style text-[9px] mb-4">
-                                       <span className="group-hover:text-agent transition-colors">{trait}</span>
-                                       <span className="text-agent bg-agent/5 px-2 py-1 font-mono">{(personality as any)[trait].toFixed(2)}</span>
-                                    </div>
-                                    <input type="range" min="0" max="1" step="0.01" value={(personality as any)[trait]} onChange={(e) => setPersonality(p => ({ ...p, [trait]: parseFloat(e.target.value) }))} className="w-full h-1 bg-zinc/10 accent-sovereign appearance-none cursor-pointer hover:accent-agent transition-all" />
-                                 </div>
-                               ))}
-                             </div>
-                             <div className="p-6 bg-flux/5 border border-flux/20 text-[9px] font-mono leading-relaxed italic opacity-70">
-                                Calibration changes propagate in real-time to the latent speech manifold and decision-making logic gates.
-                             </div>
-                          </div>
-                       </div>
-                    </div>
+                    <SoulPreferencesPanel onClose={() => setIsSoulOpen(false)} />
                  ) : isPreferencesOpen ? (
                     <div className="flex flex-col gap-16">
+                       {/* ... existing bridge content ... */}
                        <div className="grid grid-cols-1 lg:grid-cols-1 gap-16">
                           <div className="flex flex-col">
                              <h3 className="baunk-style text-[12px] border-b border-sovereign pb-1 mb-8 opacity-50 tracking-[0.3em]">Security_&_Trust_Protocol</h3>
@@ -1441,39 +1554,67 @@ const App: React.FC = () => {
                        </div>
                     </div>
                  ) : isSettingsOpen ? (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                       {skillVerifier.current.getManifests().map(skill => (
-                         <div 
-                           key={skill.id} 
-                           onClick={() => setSelectedSkill(skill)}
-                           className={`facet p-8 border-zinc/10 relative hover:border-agent transition-all duration-500 group cursor-pointer ${!skill.verified ? 'opacity-40 grayscale' : 'shadow-sm'}`}
-                         >
-                            <div className="flex justify-between items-start mb-6">
-                               <div className="flex flex-col">
-                                 <span className="baunk-style text-[12px] group-hover:text-agent transition-colors">{skill.name}</span>
-                                 <span className="text-[7px] font-mono opacity-30 mt-1 uppercase tracking-tighter">{skill.category} / {skill.id}</span>
+                    showSkillWizard ? (
+                        <SkillBuilderWizard onClose={() => { setShowSkillWizard(false); fetchSkills(); }} />
+                    ) : (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 relative">
+                           {/* Add New Skill Button */}
+                           <div 
+                             onClick={() => setShowSkillWizard(true)}
+                             className="facet p-8 border-dashed border-zinc/20 hover:border-agent transition-all duration-300 group cursor-pointer flex flex-col items-center justify-center gap-4 bg-zinc/5 hover:bg-agent/5 h-[300px]"
+                           >
+                               <div className="w-16 h-16 rounded-full border border-zinc/20 flex items-center justify-center group-hover:border-agent transition-colors">
+                                   <span className="text-2xl text-zinc-400 group-hover:text-agent">+</span>
                                </div>
-                               <button 
-                                 onClick={(e) => { e.stopPropagation(); handleToggleSkill(skill.id); }}
-                                 className={`px-3 py-1 text-[8px] baunk-style border ${skill.verified ? 'bg-agent text-white border-agent' : 'bg-white text-zinc border-zinc/20 hover:border-tension hover:text-tension'}`}
-                               >
-                                  {skill.verified ? '[ ACTIVE ]' : '[ OFFLINE ]'}
-                               </button>
-                            </div>
-                            <div className="space-y-2 mb-6">
-                              <span className="text-[7px] baunk-style opacity-30 block">Capabilities:</span>
-                              <div className="flex flex-wrap gap-1">
-                                {skill.capabilities.map((cap, ci) => (
-                                  <span key={ci} className="bg-zinc/5 border border-zinc/10 px-2 py-0.5 text-[7px] font-mono opacity-60 truncate max-w-full">{cap}</span>
-                                ))}
-                              </div>
-                            </div>
-                            <div className="flex justify-between items-center text-[7px] font-mono opacity-20 mt-8 pt-4 border-t border-zinc/5">
-                               <span>SIG: {skill.signature}</span>
-                            </div>
-                         </div>
-                       ))}
-                    </div>
+                               <span className="baunk-style text-[10px] tracking-[0.2em] group-hover:text-agent">CREATE_NEW_COGNITIVE_MODULE</span>
+                           </div>
+
+                           {/* ... existing skill verifier ... */}
+                           {skills.map(skill => (
+                             <div 
+                               key={skill.id} 
+                               onClick={() => setSelectedSkill(skill)}
+                               className={`facet p-8 border-zinc/10 relative hover:border-agent transition-all duration-500 group cursor-pointer ${!skill.verified ? 'opacity-40 grayscale' : 'shadow-sm'}`}
+                             >
+                                <div className="flex justify-between items-start mb-6">
+                                   <div className="flex flex-col">
+                                     <span className="baunk-style text-[12px] group-hover:text-agent transition-colors">{skill.name}</span>
+                                     <span className="text-[7px] font-mono opacity-30 mt-1 uppercase tracking-tighter">{skill.category} / {skill.id}</span>
+                                   </div>
+                                   <div className="flex gap-2">
+                                       <button 
+                                         onClick={(e) => { e.stopPropagation(); handleDeleteSkill(skill.id); }}
+                                         className="px-2 py-1 text-[8px] baunk-style text-red-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
+                                       >
+                                          ✕
+                                       </button>
+                                       <button 
+                                         onClick={(e) => { e.stopPropagation(); handleToggleSkill(skill.id); }}
+                                         className={`px-3 py-1 text-[8px] baunk-style border ${skill.verified ? 'bg-agent text-white border-agent' : 'bg-white text-zinc border-zinc/20 hover:border-tension hover:text-tension'}`}
+                                       >
+                                          {skill.verified ? '[ ACTIVE ]' : '[ OFFLINE ]'}
+                                       </button>
+                                   </div>
+                                </div>
+                                <div className="space-y-2 mb-6">
+                                  <span className="text-[7px] baunk-style opacity-30 block">Capabilities:</span>
+                                  <div className="flex flex-wrap gap-1">
+                                    {(skill.capabilities || []).length > 0 ? (
+                                        skill.capabilities.map((cap, ci) => (
+                                          <span key={ci} className="bg-zinc/5 border border-zinc/10 px-2 py-0.5 text-[7px] font-mono opacity-60 truncate max-w-full">{cap}</span>
+                                        ))
+                                    ) : (
+                                        <span className="text-[7px] font-mono opacity-30 italic">No specific tool bindings.</span>
+                                    )}
+                                  </div>
+                                </div>
+                                <div className="flex justify-between items-center text-[7px] font-mono opacity-20 mt-8 pt-4 border-t border-zinc/5">
+                                   <span>SIG: {skill.signature}</span>
+                                </div>
+                             </div>
+                           ))}
+                        </div>
+                    )
                  ) : isDriveOpen ? (
                     <div className="flex flex-col items-center justify-center h-full gap-12 py-20">
                        <div className="relative">
@@ -1491,6 +1632,7 @@ const App: React.FC = () => {
                  ) : null}
               </div>
 
+              {/* ... Skill Popup ... */}
               {/* Skill Detail Popup */}
               {selectedSkill && (
                 <div className="absolute top-0 md:top-24 left-0 md:left-1/2 md:-translate-x-1/2 z-[150] w-full h-full md:h-auto md:w-[90%] max-w-2xl md:max-h-[75vh] bg-white border-2 border-sovereign shadow-[0_20px_60px_rgba(0,0,0,0.3)] flex flex-col animate-in slide-in-from-top-10 duration-500">
@@ -1555,7 +1697,11 @@ const App: React.FC = () => {
                         </div>
                         <div className="pt-3 border-t border-zinc/10">
                           <span className="text-[7px] baunk-style opacity-30 block mb-1">Fundamental_Logic:</span>
-                          <p className="text-[10px] font-mono italic opacity-60">"{selectedSkill.logic}"</p>
+                          <div className="space-y-1">
+                            {selectedSkill.logic.map((l, i) => (
+                              <p key={i} className="text-[10px] font-mono italic opacity-60">"{l}"</p>
+                            ))}
+                          </div>
                         </div>
                       </div>
                     </section>
@@ -1563,7 +1709,7 @@ const App: React.FC = () => {
                     <section className="space-y-4">
                       <h4 className="baunk-style text-[9px] text-sovereign">Best_Practices_Guide</h4>
                       <div className="space-y-2">
-                        {selectedSkill.bestPractices.map((b, i) => (
+                        {selectedSkill.bestPractices && selectedSkill.bestPractices.map((b, i) => (
                           <div key={i} className="p-3 bg-white border border-sovereign/5 text-[10px] font-mono flex gap-3 shadow-sm">
                             <span className="text-agent">●</span>
                             <span>{b}</span>

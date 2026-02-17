@@ -24,6 +24,16 @@ class TaskPriority(str, Enum):
     HIGH = "HIGH"
     URGENT = "URGENT"
 
+class SoulHumor(str, Enum):
+    DRY = "DRY"
+    WITTY = "WITTY"
+    PLAYFUL = "PLAYFUL"
+
+class SoulConciseness(str, Enum):
+    CONCISE = "CONCISE"
+    BALANCED = "BALANCED"
+    EXPRESSIVE = "EXPRESSIVE"
+
 # --- Database Models (Persistence) ---
 
 class Run(SQLModel, table=True):
@@ -64,6 +74,7 @@ class DAGTask(BaseModel):
     result: Optional[Any] = None
     retry_count: int = 0
     logs: List[str] = []
+    priority_score: float = 0.0
 
 # --- API Schemas ---
 
@@ -76,6 +87,9 @@ class TelemetryData(BaseModel):
     hrv: Optional[int] = None
     stress_score: Optional[float] = None
     energy_level: Optional[float] = None
+    valence: Optional[float] = 0.5
+    arousal: Optional[float] = 0.5
+    focus: Optional[float] = 0.5
 
 class SystemStatus(BaseModel):
     cpu_usage: float
@@ -84,6 +98,7 @@ class SystemStatus(BaseModel):
     active_bridges: List[str]
     vault_integrity: bool
     daemon_version: str = "4.5.1"
+    harmonic_status: Optional[str] = "Inactive"
 
 class LoginRequest(BaseModel):
     key: str
@@ -101,3 +116,12 @@ class TaskUpdate(BaseModel):
     completed: bool
     priority: TaskPriority = TaskPriority.MEDIUM
     due_date: Optional[str] = None
+
+class SoulPreferences(BaseModel):
+    tone: float = Field(0.5, ge=0.0, le=1.0)
+    humor: SoulHumor = SoulHumor.DRY
+    empathy: float = Field(0.5, ge=0.0, le=1.0)
+    assertiveness: float = Field(0.5, ge=0.0, le=1.0)
+    creativity: float = Field(0.5, ge=0.0, le=1.0)
+    verbosity: float = Field(0.5, ge=0.0, le=1.0) # Legacy support
+    conciseness: SoulConciseness = SoulConciseness.BALANCED

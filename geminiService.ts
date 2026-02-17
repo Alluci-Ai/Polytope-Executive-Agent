@@ -1,7 +1,6 @@
-
 import { GoogleGenAI, LiveServerMessage, Modality, Blob, GenerateContentResponse, FunctionDeclaration, Type } from '@google/genai';
 import { AuditLedger, generateSystemPrompt } from './alluciCore';
-import { PersonalityTraits, Connection } from './types';
+import { PersonalityTraits, Connection, SkillManifest } from './types';
 
 // Exported GroundingSource for UI reference list
 export interface GroundingSource {
@@ -49,12 +48,14 @@ export class AlluciGeminiService {
   public audit: AuditLedger = new AuditLedger();
   private currentPersonality: PersonalityTraits = { satireLevel: 0.5, analyticalDepth: 0.8, protectiveBias: 0.9, verbosity: 0.4 };
   private currentConnections: Connection[] = [];
+  private currentSkills: SkillManifest[] = []; // Track active skills
   private DAEMON_URL = 'http://localhost:8000';
 
   constructor() {}
 
   setPersonality(traits: PersonalityTraits) { this.currentPersonality = traits; }
   setConnections(connections: Connection[]) { this.currentConnections = connections; }
+  setSkills(skills: SkillManifest[]) { this.currentSkills = skills; }
 
   // Added sendVideoFrame to handle streaming image frames to the Live API session
   sendVideoFrame(base64Data: string) {
@@ -113,7 +114,8 @@ export class AlluciGeminiService {
       config: {
         responseModalities: [Modality.AUDIO],
         speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } } },
-        systemInstruction: generateSystemPrompt(this.currentPersonality, this.currentConnections),
+        // [ SYSTEM BOOTLOADER ]: Injects the Semantic Cognition Layer
+        systemInstruction: generateSystemPrompt(this.currentPersonality, this.currentConnections, this.currentSkills),
         tools: [{ functionDeclarations: sovereignTools }],
         inputAudioTranscription: {},
         outputAudioTranscription: {},
@@ -162,8 +164,9 @@ export class AlluciGeminiService {
     parts.push({ text });
 
     let currentContents = [{ role: 'user', parts }];
+    // [ SYSTEM BOOTLOADER ]: Injects the Semantic Cognition Layer
     const config = { 
-      systemInstruction: generateSystemPrompt(this.currentPersonality, this.currentConnections),
+      systemInstruction: generateSystemPrompt(this.currentPersonality, this.currentConnections, this.currentSkills),
       tools: [{ functionDeclarations: sovereignTools }]
     };
 
@@ -218,20 +221,32 @@ export class AlluciGeminiService {
   }
 }
 
-export function decode(base64: string) {
+// Helper functions for audio processing
+export function decode(base64: string): Uint8Array {
   const binaryString = atob(base64);
-  const bytes = new Uint8Array(binaryString.length);
-  for (let i = 0; i < binaryString.length; i++) bytes[i] = binaryString.charCodeAt(i);
+  const len = binaryString.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
   return bytes;
 }
 
-export async function decodeAudioData(data: Uint8Array, ctx: AudioContext, sampleRate: number, numChannels: number): Promise<AudioBuffer> {
+export async function decodeAudioData(
+  data: Uint8Array,
+  ctx: AudioContext,
+  sampleRate: number,
+  numChannels: number,
+): Promise<AudioBuffer> {
   const dataInt16 = new Int16Array(data.buffer);
   const frameCount = dataInt16.length / numChannels;
   const buffer = ctx.createBuffer(numChannels, frameCount, sampleRate);
+
   for (let channel = 0; channel < numChannels; channel++) {
     const channelData = buffer.getChannelData(channel);
-    for (let i = 0; i < frameCount; i++) channelData[i] = dataInt16[i * numChannels + channel] / 32768.0;
+    for (let i = 0; i < frameCount; i++) {
+      channelData[i] = dataInt16[i * numChannels + channel] / 32768.0;
+    }
   }
   return buffer;
 }

@@ -38,20 +38,60 @@ export interface AuditEntry {
   prevHash: string;
 }
 
+export interface SkillPersonalityImpact {
+  toneShift?: number; // -1.0 to 1.0
+  creativityShift?: number;
+  assertivenessShift?: number;
+  empathyShift?: number;
+}
+
 export interface SkillManifest {
-  name: string;
   id: string;
-  category: 'BRIDGE' | 'MANIFOLD' | 'FRAMEWORK';
+  name: string;
+  category: 'BRIDGE' | 'MANIFOLD' | 'FRAMEWORK' | 'CUSTOM';
   description: string;
-  mindsets: string[];
-  methodologies: string[];
-  chainsOfThought: string[];
-  logic: string;
-  bestPractices: string[];
+  
+  // [ COGNITIVE_LAYERS ]
+  knowledge: string[];       // Declarative memory blocks
+  mindsets: string[];        // Attitudinal stances
+  methodologies: string[];   // Procedural templates
+  frameworks: string[];      // Structural logic schemas
+  chainsOfThought: string[]; // Explicit reasoning steps
+  logic: string[];           // Governing axioms (Deductive/Inductive)
+  
+  // [ DYNAMIC_BINDING ]
+  personalityMapping: SkillPersonalityImpact;
+
+  // [ METADATA_&_SECURITY ]
   signature: string;
   publicKey: string;
-  capabilities: string[];
   verified: boolean;
+  
+  // Legacy support for capability routing
+  capabilities: string[];
+  bestPractices?: string[];
+}
+
+export enum SoulHumor {
+  DRY = "DRY",
+  WITTY = "WITTY",
+  PLAYFUL = "PLAYFUL"
+}
+
+export enum SoulConciseness {
+  CONCISE = "CONCISE",
+  BALANCED = "BALANCED",
+  EXPRESSIVE = "EXPRESSIVE"
+}
+
+export interface SoulPreferences {
+  tone: number; // 0 (Casual) - 1 (Formal)
+  humor: SoulHumor;
+  empathy: number; // 0 (Robotic) - 1 (Compassionate)
+  assertiveness: number; // 0 (Passive) - 1 (Commanding)
+  creativity: number; // 0 (Deterministic) - 1 (Divergent)
+  verbosity: number; // Legacy support, mapped to conciseness
+  conciseness: SoulConciseness;
 }
 
 export interface PersonalityTraits {

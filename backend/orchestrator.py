@@ -18,6 +18,7 @@ from .engine.planner import Planner
 from .engine.executor import Executor
 from .engine.critic import Critic
 from .adapters.registry import AdapterRegistry
+from .harmonic_enhancer import HarmonicAssistant
 
 class ExecutiveOrchestrator:
     def __init__(self, router: ModelRouter, vault: VaultManager, ace: AffectiveEngine, settings: Settings):
@@ -29,6 +30,8 @@ class ExecutiveOrchestrator:
         self.planner = Planner(router)
         self.critic = Critic(router, settings.CRITIC_THRESHOLD)
         self.adapter_registry = AdapterRegistry()
+        self.harmonic = HarmonicAssistant() # Harmonic Enhancer Integration
+        self.ace = ace
         
         # Pass a callable that returns the engine binding or creates a session
         # For simplicity with SQLModel, we can pass the engine and let Executor handle session creation
@@ -58,7 +61,16 @@ class ExecutiveOrchestrator:
         # 3. Planning
         try:
             tasks = await self.planner.generate_plan(objective)
-            current_plan = [t.dict() for t in tasks.values()]
+            
+            # --- Harmonic Ranking Hook ---
+            # Prioritize tasks based on Topological and Lattice dynamics
+            task_list = list(tasks.values())
+            ranked_list = self.harmonic.rank_actions(task_list)
+            
+            # Log the ranking for observability
+            self.logger.info(f"Harmonic Ranking Applied: {[t.id for t in ranked_list]}")
+            
+            current_plan = [t.dict() for t in ranked_list]
             self._update_run_status(run_id, RunStatus.ACTIVE)
         except Exception as e:
             self._update_run_status(run_id, RunStatus.FAILED, feedback=str(e))
