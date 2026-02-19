@@ -96,6 +96,17 @@ class ExecutiveOrchestrator:
                 if best_practices:
                     context_parts.append(f"BEST PRACTICES: {'; '.join(best_practices)}")
 
+                # Injection of Execution Topology
+                if "executionGraph" in manifest and manifest["executionGraph"]:
+                    graph = manifest["executionGraph"]
+                    edges = graph.get("edges", [])
+                    if edges:
+                        context_parts.append("\n[ MANDATORY EXECUTION TOPOLOGY ]")
+                        context_parts.append("The user has defined the following dependencies for Knowledge Domains:")
+                        for edge in edges:
+                            context_parts.append(f"- {edge['source']} MUST PRECEDE {edge['target']}")
+                        context_parts.append("Ensure the plan respects this topological sort.")
+
         except Exception:
             pass
 

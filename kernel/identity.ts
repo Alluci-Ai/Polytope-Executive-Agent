@@ -1,8 +1,8 @@
-
 import { generateKeyPairSync, sign, verify, createPublicKey, KeyObject } from 'node:crypto';
 import { readFileSync, writeFileSync, existsSync, mkdirSync, chmodSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
+import { Buffer } from 'node:buffer';
 
 /**
  * [ KEY_STORE_ABSTRACTION ]

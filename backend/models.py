@@ -127,6 +127,10 @@ class SoulPreferences(BaseModel):
     verbosity: float = Field(0.5, ge=0.0, le=1.0) # Legacy support
     conciseness: SoulConciseness = SoulConciseness.BALANCED
 
+class ExecutionGraph(BaseModel):
+    nodes: List[Dict[str, Any]] = [] # {id, x, y}
+    edges: List[Dict[str, str]] = [] # {source, target}
+
 class SoulManifest(BaseModel):
     preferences: SoulPreferences
     identityCore: str = "You are Alluci, a Sovereign Executive Assistant operating within a high-dimensional Polytope geometry."
@@ -138,6 +142,7 @@ class SoulManifest(BaseModel):
     mindsets: List[str] = ["Growth", "Sovereign"]
     bootSequence: str = "LOADING SEMANTIC COGNITION LAYER..."
     heartbeat: str = "- [x] Monitor system vitality and task queues.\n- [x] Scan for anomaly patterns in logs."
+    executionGraph: Optional[ExecutionGraph] = None
     
     # Extended Cognition Layer
     methodologies: List[str] = []

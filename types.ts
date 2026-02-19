@@ -94,6 +94,22 @@ export interface SoulPreferences {
   conciseness: SoulConciseness;
 }
 
+export interface GraphNode {
+  id: string;
+  x: number;
+  y: number;
+}
+
+export interface GraphEdge {
+  source: string;
+  target: string;
+}
+
+export interface ExecutionGraph {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+}
+
 export interface SoulManifest {
   preferences: SoulPreferences;
   identityCore: string;
@@ -105,6 +121,7 @@ export interface SoulManifest {
   mindsets: string[];
   bootSequence: string;
   heartbeat?: string;
+  executionGraph?: ExecutionGraph;
   // Extended Cognition
   methodologies: string[];
   logic: string[];

@@ -5,6 +5,7 @@ import PersonalityField from './PersonalityField';
 import { SoulPreferences, SoulHumor, SoulConciseness, SoulManifest, SkillManifest } from './types';
 import SkillBuilderWizard from './SkillBuilderWizard';
 import { SKILL_DATABASE } from './knowledge';
+import VisualDAGEditor from './VisualDAGEditor';
 
 const DAEMON_URL = 'http://localhost:8000';
 
@@ -99,7 +100,7 @@ const TagInput: React.FC<{
 };
 
 const IdentityForge: React.FC<{ onClose: () => void; onManifestUpdate?: (manifest: SoulManifest) => void }> = ({ onClose, onManifestUpdate }) => {
-  const [tab, setTab] = useState<'IDENTITY' | 'COGNITION' | 'SKILLS'>('IDENTITY');
+  const [tab, setTab] = useState<'IDENTITY' | 'COGNITION'>('IDENTITY');
   const [manifest, setManifest] = useState<SoulManifest | null>(null);
   const [loading, setLoading] = useState(true);
   const [isDirty, setIsDirty] = useState(false);
@@ -108,10 +109,6 @@ const IdentityForge: React.FC<{ onClose: () => void; onManifestUpdate?: (manifes
   // Skill Ingestion State
   const [isSkillPickerOpen, setIsSkillPickerOpen] = useState(false);
   const [selectedSkillsForIngest, setSelectedSkillsForIngest] = useState<string[]>([]);
-
-  // Skill Lab State
-  const [reviewQueue, setReviewQueue] = useState<any[]>([]);
-  const [selectedPresetId, setSelectedPresetId] = useState<string>('');
 
   const fetchManifest = async () => {
     const token = localStorage.getItem('alluci_daemon_token');
@@ -165,7 +162,8 @@ const IdentityForge: React.FC<{ onClose: () => void; onManifestUpdate?: (manifes
             logic: ["Waste is data in the wrong place"],
             bestPractices: ["Verify inputs"],
             bootSequence: "LOADING OFFLINE COGNITION LAYER...",
-            heartbeat: "- [x] Monitor system vitality\n- [ ] Sync offline caches"
+            heartbeat: "- [x] Monitor system vitality\n- [ ] Sync offline caches",
+            executionGraph: { nodes: [], edges: [] }
         });
         setLoading(false);
     }
@@ -217,24 +215,6 @@ const IdentityForge: React.FC<{ onClose: () => void; onManifestUpdate?: (manifes
     }
   };
 
-  const fetchQueue = async () => {
-    const token = localStorage.getItem('alluci_daemon_token');
-    try {
-        const res = await fetch(`${DAEMON_URL}/skills/review`, { headers: token ? { 'Authorization': `Bearer ${token}` } : {} });
-        if(res.ok) setReviewQueue(await res.json());
-    } catch(e) {}
-  };
-
-  const promoteSkill = async (id: string) => {
-    const token = localStorage.getItem('alluci_daemon_token');
-    try {
-        await fetch(`${DAEMON_URL}/skills/promote/${id}`, { method: 'POST', headers: token ? { 'Authorization': `Bearer ${token}` } : {} });
-        fetchQueue();
-    } catch (e) {
-        alert("Failed to promote skill.");
-    }
-  };
-
   const handleIngestSkills = () => {
     if (!manifest) return;
     const skillsToIngest = SKILL_DATABASE.filter(s => selectedSkillsForIngest.includes(s.id));
@@ -277,10 +257,10 @@ const IdentityForge: React.FC<{ onClose: () => void; onManifestUpdate?: (manifes
         {/* Top Bar */}
         <div className="flex justify-between items-center border-b border-sovereign pb-4 mb-6 shrink-0">
              <div className="flex gap-6">
-                 {['IDENTITY', 'COGNITION', 'SKILLS'].map((t) => (
+                 {['IDENTITY', 'COGNITION'].map((t) => (
                      <button 
                        key={t}
-                       onClick={() => { setTab(t as any); if(t==='SKILLS') fetchQueue(); }}
+                       onClick={() => setTab(t as any)}
                        className={`baunk-style text-[10px] pb-2 border-b-2 transition-all ${tab === t ? 'border-agent text-black' : 'border-transparent text-zinc hover:text-black'}`}
                      >
                         {t}_LAYER
@@ -424,31 +404,38 @@ const IdentityForge: React.FC<{ onClose: () => void; onManifestUpdate?: (manifes
                         />
                     </div>
 
-                    <div className="space-y-6">
+                    <div className="space-y-6 flex flex-col">
                         <h3 className="baunk-style text-[12px] text-flux">KNOWLEDGE_GRAPH</h3>
-                        <div className="p-6 bg-zinc/5 border border-zinc/10 h-full flex flex-col relative">
-                            <TagInput 
-                                label="ACTIVE_DOMAINS" 
-                                items={manifest.knowledgeGraph} 
-                                onChange={i => updateManifest('knowledgeGraph', i)} 
-                                placeholder="Add domain..." 
-                            />
+                        <div className="p-6 bg-zinc/5 border border-zinc/10 flex-1 flex flex-col relative gap-6">
                             
-                            <button 
-                                onClick={() => setIsSkillPickerOpen(true)}
-                                className="mt-4 alce-button baunk-style text-[8px] border-dashed border-agent text-agent hover:bg-agent hover:text-white"
-                            >
-                                [ + IMPORT_DOMAINS_FROM_SKILLS ]
-                            </button>
-                            
-                            <div className="mt-8 pt-8 border-t border-zinc/10 flex-1">
-                                <label className="text-[9px] baunk-style opacity-60 block mb-2">BOOT_SEQUENCE_TEXT</label>
-                                <textarea 
-                                    className="w-full h-full bg-white border border-zinc/20 p-3 text-[10px] font-mono focus:border-agent outline-none resize-none"
-                                    value={manifest.bootSequence}
-                                    onChange={e => updateManifest('bootSequence', e.target.value)}
+                            {/* Active Domains & Import Button */}
+                            <div className="space-y-3">
+                                <TagInput 
+                                    label="ACTIVE_DOMAINS" 
+                                    items={manifest.knowledgeGraph} 
+                                    onChange={i => updateManifest('knowledgeGraph', i)} 
+                                    placeholder="Add domain..." 
                                 />
+                                <button 
+                                    onClick={() => setIsSkillPickerOpen(true)}
+                                    className="w-full alce-button baunk-style text-[8px] border-dashed border-agent text-agent hover:bg-agent hover:text-white flex justify-center py-3"
+                                >
+                                    [ + IMPORT_DOMAINS_FROM_SKILLS ]
+                                </button>
                             </div>
+
+                            {/* Visual DAG Editor */}
+                            <div className="flex-1 flex flex-col gap-2 min-h-[500px]">
+                                <label className="text-[9px] baunk-style opacity-60 block">EXECUTION_TOPOLOGY_DAG</label>
+                                <div className="flex-1 border border-zinc/20 bg-white/50 relative">
+                                    <VisualDAGEditor 
+                                        items={manifest.knowledgeGraph}
+                                        graph={manifest.executionGraph}
+                                        onChange={(g) => updateManifest('executionGraph', g)}
+                                    />
+                                </div>
+                            </div>
+                            
                         </div>
                     </div>
 
@@ -498,116 +485,6 @@ const IdentityForge: React.FC<{ onClose: () => void; onManifestUpdate?: (manifes
                             </div>
                         </div>
                     )}
-                </div>
-            )}
-
-            {/* 4. SKILLS LAB */}
-            {tab === 'SKILLS' && (
-                <div className="space-y-12">
-                     {/* Review Queue */}
-                     <div className="space-y-4">
-                        <h3 className="baunk-style text-[12px] text-tension border-b border-tension/20 pb-2">REVIEW_QUEUE_SANDBOX</h3>
-                        {reviewQueue.length === 0 ? (
-                            <div className="p-8 border border-dashed border-zinc/20 text-center opacity-40 baunk-style text-[10px]">NO_PACKAGES_PENDING_ANALYSIS</div>
-                        ) : (
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                {reviewQueue.map((pkg, i) => (
-                                    <div key={i} className="p-4 bg-zinc/5 border border-zinc/10 hover:border-tension transition-colors group relative">
-                                        <div className="flex justify-between items-start mb-2">
-                                            <span className="baunk-style text-[10px]">{pkg.name || 'UNKNOWN_MODULE'}</span>
-                                            <span className={`text-[8px] font-mono px-2 py-0.5 ${(pkg.critic_scan?.risk_score || 0) > 50 ? 'bg-red-100 text-red-600' : 'bg-green-100 text-green-600'}`}>
-                                                RISK: {pkg.critic_scan?.risk_score || 0}
-                                            </span>
-                                        </div>
-                                        <p className="text-[9px] font-mono opacity-60 mb-4">{pkg.description}</p>
-                                        <div className="space-y-1 mb-4">
-                                            {pkg.critic_scan?.notes?.map((n: string, ni: number) => (
-                                                <div key={ni} className="text-[8px] font-mono text-tension flex gap-2">
-                                                    <span>⚠</span>
-                                                    <span>{n}</span>
-                                                </div>
-                                            ))}
-                                        </div>
-                                        <button 
-                                            onClick={() => promoteSkill(pkg.id)}
-                                            className="w-full alce-button baunk-style text-[9px] hover:bg-tension hover:text-white"
-                                        >
-                                            [ APPROVE_&_PROMOTE ]
-                                        </button>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-                     </div>
-
-                     {/* Tools */}
-                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-8 border-t border-zinc/10">
-                          <div className="p-6 bg-zinc/5 border border-zinc/10 flex flex-col items-center justify-center gap-4 text-center">
-                              <span className="text-2xl text-zinc-300">⬇</span>
-                              <h4 className="baunk-style text-[9px]">IMPORT_PACKAGE</h4>
-                              
-                              <div className="w-full flex flex-col gap-3">
-                                  <input 
-                                    type="file" 
-                                    accept=".json,.polytype"
-                                    onChange={async (e) => {
-                                        if(e.target.files?.[0]) {
-                                            const text = await e.target.files[0].text();
-                                            try {
-                                                const json = JSON.parse(text);
-                                                const token = localStorage.getItem('alluci_daemon_token');
-                                                await fetch(`${DAEMON_URL}/skills/import`, {
-                                                    method: 'POST',
-                                                    headers: { 'Content-Type': 'application/json', ...(token ? { 'Authorization': `Bearer ${token}` } : {}) },
-                                                    body: JSON.stringify(json)
-                                                });
-                                                fetchQueue();
-                                            } catch(err) { console.error(err); }
-                                        }
-                                    }}
-                                    className="text-[8px] file:mr-4 file:py-2 file:px-4 file:border-0 file:text-[9px] file:bg-zinc/10 file:baunk-style hover:file:bg-agent hover:file:text-white w-full"
-                                  />
-                                  
-                                  <div className="flex items-center gap-2 opacity-30">
-                                      <div className="h-px bg-black flex-1" />
-                                      <span className="text-[7px] baunk-style">OR_SELECT_PRESET</span>
-                                      <div className="h-px bg-black flex-1" />
-                                  </div>
-
-                                  <select 
-                                      value={selectedPresetId}
-                                      onChange={(e) => setSelectedPresetId(e.target.value)}
-                                      className="w-full bg-white border border-zinc/20 p-2 text-[8px] font-mono outline-none"
-                                  >
-                                      <option value="">[ CHOOSE_FROM_MANIFEST ]</option>
-                                      {SKILL_DATABASE.map(s => (
-                                          <option key={s.id} value={s.id}>{s.name.toUpperCase()}</option>
-                                      ))}
-                                  </select>
-
-                                  <button 
-                                    disabled={!selectedPresetId}
-                                    onClick={async () => {
-                                        if(!selectedPresetId) return;
-                                        const skill = SKILL_DATABASE.find(s => s.id === selectedPresetId);
-                                        if(skill) {
-                                            const token = localStorage.getItem('alluci_daemon_token');
-                                            await fetch(`${DAEMON_URL}/skills/import`, {
-                                                method: 'POST',
-                                                headers: { 'Content-Type': 'application/json', ...(token ? { 'Authorization': `Bearer ${token}` } : {}) },
-                                                body: JSON.stringify(skill)
-                                            });
-                                            fetchQueue();
-                                            setSelectedPresetId('');
-                                        }
-                                    }}
-                                    className="w-full alce-button baunk-style text-[8px] bg-white border border-zinc/20 hover:bg-agent hover:text-white disabled:opacity-50"
-                                  >
-                                      [ INGEST_PRESET ]
-                                  </button>
-                              </div>
-                          </div>
-                     </div>
                 </div>
             )}
 
