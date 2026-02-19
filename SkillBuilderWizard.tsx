@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { PolytopeIdentity } from './App';
 import PersonalityField from './PersonalityField';
@@ -102,9 +101,53 @@ const StepMetadata: React.FC<StepProps> = ({ data, update, next }) => (
       />
     </div>
 
+    <div className="h-px bg-zinc/10 w-full my-4" />
+    <h4 className="baunk-style text-[10px] opacity-40 mb-2">EXTENDED_META_PROPERTIES</h4>
+
+    <ListInput 
+      label="1. MINDSETS" 
+      items={data.mindsets || []} 
+      onChange={(i) => update('mindsets', i)} 
+      placeholder="e.g. 'Growth', 'Skeptical'"
+    />
+
+    <ListInput 
+      label="2. METHODOLOGIES" 
+      items={data.methodologies || []} 
+      onChange={(i) => update('methodologies', i)} 
+      placeholder="e.g. 'First Principles', 'Socratic'"
+    />
+
+    <div className="flex flex-col gap-4 p-3 bg-zinc/5 border border-zinc/10 mt-2">
+        <span className="baunk-style text-[8px] opacity-60 tracking-widest">3. COGNITIVE_CHAINS_&_LOGIC</span>
+        
+        <ListInput 
+        label="LOGIC_AXIOMS" 
+        items={data.logic || []} 
+        onChange={(i) => update('logic', i)} 
+        placeholder="e.g. 'If X then Y'"
+        />
+
+        <ListInput 
+        label="CHAIN_OF_THOUGHT" 
+        items={data.chainsOfThought || []} 
+        onChange={(i) => update('chainsOfThought', i)} 
+        placeholder="Step-by-step reasoning..."
+        />
+    </div>
+
+    <div className="mt-2">
+      <ListInput 
+        label="4. BEST_PRACTICES_GUIDE" 
+        items={data.bestPractices || []} 
+        onChange={(i) => update('bestPractices', i)} 
+        placeholder="e.g. 'Always verify output integrity'"
+      />
+    </div>
+
     <div className="flex justify-end mt-4">
       <button onClick={next} disabled={!data.name} className="alce-button baunk-style text-[9px] px-6 bg-sovereign text-white disabled:opacity-50">
-        [ INITIALIZE_CORE ] →
+        [ NEXT: COGNITION ] →
       </button>
     </div>
   </div>
@@ -114,6 +157,12 @@ const StepCognition: React.FC<StepProps> = ({ data, update, next, back }) => (
   <div className="flex flex-col gap-6 animate-in slide-in-from-right-4">
     <h3 className="baunk-style text-[12px] border-b border-sovereign pb-1 mb-4">2. COGNITIVE_ARCHITECTURE</h3>
     
+    <div className="p-4 bg-zinc/5 border border-zinc/10 mb-2">
+      <p className="text-[9px] font-mono opacity-60">
+        Configure the declarative knowledge base for this module. Mindsets and Logic have been moved to the Metadata Layer.
+      </p>
+    </div>
+
     <ListInput 
       label="KNOWLEDGE_DOMAINS" 
       items={data.knowledge || []} 
@@ -121,24 +170,10 @@ const StepCognition: React.FC<StepProps> = ({ data, update, next, back }) => (
       placeholder="Add knowledge block (e.g. 'Game Theory')..."
     />
 
-    <ListInput 
-      label="MINDSETS" 
-      items={data.mindsets || []} 
-      onChange={(i) => update('mindsets', i)} 
-      placeholder="Add mindset (e.g. 'Skeptical')..."
-    />
-
-    <ListInput 
-      label="LOGIC_AXIOMS" 
-      items={data.logic || []} 
-      onChange={(i) => update('logic', i)} 
-      placeholder="Add governing logic (e.g. 'Always verify sources')..."
-    />
-
     <div className="flex justify-between mt-4">
       <button onClick={back} className="alce-button baunk-style text-[9px] px-6">← [ BACK ]</button>
       <button onClick={next} className="alce-button baunk-style text-[9px] px-6 bg-sovereign text-white">
-        [ CONFIGURE_REASONING ] →
+        [ NEXT: STRATEGY ] →
       </button>
     </div>
   </div>
@@ -148,12 +183,11 @@ const StepReasoning: React.FC<StepProps> = ({ data, update, next, back }) => (
   <div className="flex flex-col gap-6 animate-in slide-in-from-right-4">
     <h3 className="baunk-style text-[12px] border-b border-sovereign pb-1 mb-4">3. REASONING_STRATEGY</h3>
     
-    <ListInput 
-      label="METHODOLOGIES" 
-      items={data.methodologies || []} 
-      onChange={(i) => update('methodologies', i)} 
-      placeholder="Add procedural method (e.g. 'Root Cause Analysis')..."
-    />
+    <div className="p-4 bg-zinc/5 border border-zinc/10 mb-2">
+      <p className="text-[9px] font-mono opacity-60">
+        Define high-level strategic frameworks. Methodologies and Chain of Thought have been moved to the Metadata Layer.
+      </p>
+    </div>
 
     <ListInput 
       label="FRAMEWORKS" 
@@ -161,18 +195,6 @@ const StepReasoning: React.FC<StepProps> = ({ data, update, next, back }) => (
       onChange={(i) => update('frameworks', i)} 
       placeholder="Add structural framework (e.g. 'SWOT')..."
     />
-
-    <div className="bg-agent/5 p-4 border border-agent/20">
-      <ListInput 
-        label="CHAIN_OF_THOUGHT_STEPS (ORDERED)" 
-        items={data.chainsOfThought || []} 
-        onChange={(i) => update('chainsOfThought', i)} 
-        placeholder="Add reasoning step (e.g. 'Identify Variables')..."
-      />
-      <p className="text-[7px] font-mono opacity-50 mt-2">
-        * These steps will be injected as a specific reasoning protocol in the system prompt.
-      </p>
-    </div>
 
     <div className="flex justify-between mt-4">
       <button onClick={back} className="alce-button baunk-style text-[9px] px-6">← [ BACK ]</button>
@@ -242,6 +264,7 @@ const SkillBuilderWizard: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     frameworks: [],
     chainsOfThought: [],
     logic: [],
+    bestPractices: [],
     personalityMapping: { toneShift: 0, creativityShift: 0, assertivenessShift: 0, empathyShift: 0 },
     verified: true,
     capabilities: []
@@ -275,10 +298,11 @@ const SkillBuilderWizard: React.FC<{ onClose: () => void }> = ({ onClose }) => {
         if (res.ok) {
             onClose();
         } else {
-            console.error("Failed to save skill");
+            alert("Failed to save to Daemon. Is it running?");
         }
     } catch (e) {
         console.error(e);
+        alert("Network Error: Could not connect to Sovereign Daemon.");
     } finally {
         setIsSaving(false);
     }

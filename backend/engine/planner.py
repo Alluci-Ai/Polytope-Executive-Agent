@@ -1,3 +1,4 @@
+
 import json
 import logging
 from typing import List, Dict, Any, Set
@@ -14,11 +15,20 @@ class Planner:
     def __init__(self, router: ModelRouter):
         self.router = router
 
-    async def generate_plan(self, objective: str) -> Dict[str, DAGTask]:
+    async def generate_plan(self, objective: str, context: str = "") -> Dict[str, DAGTask]:
         """
-        Generates a valid DAG from the objective.
+        Generates a valid DAG from the objective, influenced by the Soul's context and skills.
         """
-        raw_plan = await self.router.get_structured_plan(objective)
+        # Augment objective with the Soul's context
+        augmented_prompt = f"""
+        {context}
+        
+        OBJECTIVE: "{objective}"
+        
+        Based on the Identity, Reasoning Style, and Available Skills above, create a plan.
+        """
+        
+        raw_plan = await self.router.get_structured_plan(augmented_prompt)
         steps = raw_plan.get("steps", [])
         
         if not steps:

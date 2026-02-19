@@ -1,6 +1,7 @@
+
 import { GoogleGenAI, LiveServerMessage, Modality, Blob, GenerateContentResponse, FunctionDeclaration, Type } from '@google/genai';
 import { AuditLedger, generateSystemPrompt } from './alluciCore';
-import { PersonalityTraits, Connection, SkillManifest } from './types';
+import { PersonalityTraits, Connection, SkillManifest, SoulManifest } from './types';
 
 // Exported GroundingSource for UI reference list
 export interface GroundingSource {
@@ -46,14 +47,14 @@ export class AlluciGeminiService {
   private inputAudioContext: AudioContext | null = null;
   private scriptProcessor: ScriptProcessorNode | null = null;
   public audit: AuditLedger = new AuditLedger();
-  private currentPersonality: PersonalityTraits = { satireLevel: 0.5, analyticalDepth: 0.8, protectiveBias: 0.9, verbosity: 0.4 };
+  private currentPersonality: SoulManifest | PersonalityTraits = { satireLevel: 0.5, analyticalDepth: 0.8, protectiveBias: 0.9, verbosity: 0.4 };
   private currentConnections: Connection[] = [];
   private currentSkills: SkillManifest[] = []; // Track active skills
   private DAEMON_URL = 'http://localhost:8000';
 
   constructor() {}
 
-  setPersonality(traits: PersonalityTraits) { this.currentPersonality = traits; }
+  setPersonality(traits: SoulManifest | PersonalityTraits) { this.currentPersonality = traits; }
   setConnections(connections: Connection[]) { this.currentConnections = connections; }
   setSkills(skills: SkillManifest[]) { this.currentSkills = skills; }
 

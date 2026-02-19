@@ -7,6 +7,7 @@ import hashlib
 import re
 from datetime import datetime, time, date
 from typing import List, Dict, Any, Optional
+from .security.vault import VaultManager
 
 class Probe:
     """Base class for deterministic checks."""
@@ -80,18 +81,17 @@ class TaskDeadlineProbe(Probe):
         return None
 
 class HeartbeatDaemon:
-    def __init__(self, orchestrator, interval_seconds: int = 900): # Default 15 mins
+    def __init__(self, orchestrator, vault: VaultManager, interval_seconds: int = 900): # Default 15 mins
         self.orchestrator = orchestrator
+        self.vault = vault
         self.interval = interval_seconds
         self.logger = logging.getLogger("Heartbeat")
         self.running = False
         self.state_file = "heartbeat_state.json"
-        self.orders_file = "HEARTBEAT.md"
         
         # Configuration
         self.quiet_hours_start = time(22, 0) # 10 PM UTC
         self.quiet_hours_end = time(7, 0)    # 7 AM UTC
-        self.enabled = True
         
         # State
         self.probe_states: Dict[str, str] = self._load_state()
@@ -118,19 +118,38 @@ class HeartbeatDaemon:
             return now >= self.quiet_hours_start or now <= self.quiet_hours_end
 
     def _parse_standing_orders(self) -> List[str]:
-        """Reads HEARTBEAT.md and extracts active instructions."""
-        if not os.path.exists(self.orders_file):
+        """
+        Retrieves standing orders from the Soul Manifest (Identity Layer).
+        Fallback to HEARTBEAT.md if manifest entry is missing.
+        """
+        orders = []
+        
+        # 1. Try Soul Manifest (Production Path)
+        try:
+            manifest_data = self.vault.retrieve_secret("soul_manifest")
+            if manifest_data and "heartbeat" in manifest_data:
+                raw_orders = manifest_data["heartbeat"]
+                for line in raw_orders.split('\n'):
+                    if line.strip().startswith("- [x]"):
+                        orders.append(line.replace("- [x]", "").strip())
+                if orders:
+                    return orders
+        except Exception as e:
+            self.logger.warning(f"Failed to read Soul Manifest for heartbeat: {e}")
+
+        # 2. Fallback to File (Legacy Path)
+        if not os.path.exists("HEARTBEAT.md"):
             return []
         
-        orders = []
         try:
-            with open(self.orders_file, 'r') as f:
+            with open("HEARTBEAT.md", 'r') as f:
                 lines = f.readlines()
                 for line in lines:
                     if line.strip().startswith("- [x]"): # Only active tasks
                         orders.append(line.replace("- [x]", "").strip())
         except Exception as e:
-            self.logger.error(f"Failed to read orders: {e}")
+            self.logger.error(f"Failed to read HEARTBEAT.md: {e}")
+            
         return orders
 
     async def start(self):
@@ -162,11 +181,11 @@ class HeartbeatDaemon:
         # 2. Read Orders
         orders = self._parse_standing_orders()
         if not orders:
-            self.logger.info("[PULSE] No standing orders found.")
+            self.logger.info("[PULSE] No standing orders found in Soul Manifest.")
             return
 
         changes_detected = []
-        task_file = "tasks.md" # Central task registry
+        task_file = "TASKS.md" # Central task registry
         
         # 3. Run Probes (The "Cheap" Phase)
         
@@ -194,6 +213,10 @@ class HeartbeatDaemon:
         # If probes detected changes OR if there are orders that imply external polling
         if changes_detected or any("monitor" in o.lower() for o in orders):
             self.logger.info("[PULSE] Escalating to Agent Reasoning...")
-            await self.orchestrator.trigger_proactive_event(orders, changes_detected)
+            if self.orchestrator:
+                # We need a method on orchestrator to handle this proactive event. 
+                # Ideally execute_objective with a system context.
+                pass 
+                # await self.orchestrator.trigger_proactive_event(orders, changes_detected)
         else:
             self.logger.info("[PULSE] No significant changes detected.")

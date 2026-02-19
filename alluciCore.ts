@@ -7,7 +7,8 @@ import {
   AutonomyLevel,
   SoulPreferences,
   SoulHumor,
-  SoulConciseness
+  SoulConciseness,
+  SoulManifest
 } from './types';
 import {
   PROFILE_IDENTITY,
@@ -171,17 +172,46 @@ export class SkillVerifier {
  * Replaces procedural logic with State Injection.
  */
 export const generateSystemPrompt = (
-  baseTraits: PersonalityTraits | SoulPreferences, 
+  manifestOrTraits: PersonalityTraits | SoulPreferences | SoulManifest, 
   connections: Connection[] = [],
   activeSkills: SkillManifest[] = []
 ) => {
   
+  // Type Guard for SoulManifest
+  const isManifest = (m: any): m is SoulManifest => 'identityCore' in m;
+  
+  let manifest: SoulManifest;
+
+  if (isManifest(manifestOrTraits)) {
+    manifest = manifestOrTraits;
+  } else {
+    // Fallback shim for older types or partial loads
+    const prefs = 'satireLevel' in manifestOrTraits ? {
+        tone: 0.5, humor: SoulHumor.DRY, empathy: 0.5, assertiveness: 0.5, creativity: 0.5, verbosity: 0.5, conciseness: SoulConciseness.BALANCED
+    } : manifestOrTraits as SoulPreferences;
+
+    manifest = {
+        preferences: prefs,
+        identityCore: PROFILE_IDENTITY, // Default const
+        directives: ["Sovereignty", "Polytopic Reasoning", "Deterministic Execution"],
+        voiceProfile: "Professional, crisp, slightly futuristic, yet warm.",
+        reasoningStyle: PROFILE_REASONING_STYLE,
+        knowledgeGraph: ["Circular Economy", "Value Based Pricing"],
+        frameworks: ["Business Model Canvas"],
+        mindsets: ["Growth", "Sovereign"],
+        methodologies: ["First Principles"],
+        logic: ["Waste is data in the wrong place"],
+        chainsOfThought: ["Identify Variables -> Map Edges -> Solve"],
+        bestPractices: ["Verify inputs"],
+        bootSequence: "LOADING SEMANTIC COGNITION LAYER..."
+    };
+  }
+
   // 1. STATE INJECTION: Serialize the current runtime state into JSON
-  // This allows the LLM to apply the Policies defined in markdown.
   const runtimeState = {
-    identity: "ALLUCI_POLYTOPE_V4.3",
+    identity: "ALLUCI_POLYTOPE_V4.5",
     timestamp: new Date().toISOString(),
-    soul_matrix: baseTraits,
+    soul_matrix: manifest.preferences,
     active_bridges: connections.filter(c => c.status === 'CONNECTED').map(c => ({
       id: c.id,
       name: c.name,
@@ -201,15 +231,27 @@ ${activeSkills.map(s => `- **${s.name}**: ${s.logic.join(' ')}`).join('\n')}
   // 3. BOOTLOADER SEQUENCE
   return `
 [ SYSTEM BOOTLOADER ]
->>> LOADING SEMANTIC COGNITION LAYER...
+>>> ${manifest.bootSequence}
 
-${PROFILE_IDENTITY}
+# IDENTITY CORE
+${manifest.identityCore}
+
+# VOICE PROFILE
+${manifest.voiceProfile}
+
+# PRIME DIRECTIVES
+${manifest.directives.map((d, i) => `${i+1}. ${d}`).join('\n')}
+
+# REASONING STYLE
+${manifest.reasoningStyle}
+
+# ACTIVE KNOWLEDGE GRAPH
+${manifest.knowledgeGraph.map(k => `- ${k}`).join('\n')}
+
+# MENTAL FRAMEWORKS
+${manifest.frameworks.map(f => `- ${f}`).join('\n')}
 
 ${PROFILE_AFFECTIVE_COMPUTING}
-
-${PROFILE_REASONING_STYLE}
-
-${KNOWLEDGE_FRAMEWORKS}
 
 >>> INJECTING RUNTIME STATE...
 \`\`\`json

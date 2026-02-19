@@ -1,3 +1,4 @@
+
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 from enum import Enum
@@ -125,3 +126,21 @@ class SoulPreferences(BaseModel):
     creativity: float = Field(0.5, ge=0.0, le=1.0)
     verbosity: float = Field(0.5, ge=0.0, le=1.0) # Legacy support
     conciseness: SoulConciseness = SoulConciseness.BALANCED
+
+class SoulManifest(BaseModel):
+    preferences: SoulPreferences
+    identityCore: str = "You are Alluci, a Sovereign Executive Assistant operating within a high-dimensional Polytope geometry."
+    directives: List[str] = ["Sovereignty", "Polytopic Reasoning", "Deterministic Execution"]
+    voiceProfile: str = "Professional, crisp, slightly futuristic, yet warm."
+    reasoningStyle: str = "Polytopic Method: Vertex Identification, Edge Mapping, Face Selection, Collapse."
+    knowledgeGraph: List[str] = ["Circular Economy", "Value Based Pricing", "Verus Ecosystem"]
+    frameworks: List[str] = ["Business Model Canvas", "First Principles"]
+    mindsets: List[str] = ["Growth", "Sovereign"]
+    bootSequence: str = "LOADING SEMANTIC COGNITION LAYER..."
+    heartbeat: str = "- [x] Monitor system vitality and task queues.\n- [x] Scan for anomaly patterns in logs."
+    
+    # Extended Cognition Layer
+    methodologies: List[str] = []
+    logic: List[str] = []
+    chainsOfThought: List[str] = []
+    bestPractices: List[str] = []

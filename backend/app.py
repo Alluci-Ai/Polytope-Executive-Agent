@@ -4,13 +4,14 @@ import contextlib
 import psutil
 import logging
 from typing import Dict, Any, List
-from fastapi import FastAPI, HTTPException, Depends, Query
+from fastapi import FastAPI, HTTPException, Depends, Query, Body
 from fastapi.middleware.cors import CORSMiddleware
 from cryptography.fernet import Fernet
 import uvicorn
+import json
 
 from .config import load_settings
-from .models import ObjectiveRequest, TelemetryData, SystemStatus, LoginRequest, TaskItem, TaskUpdate, SoulPreferences
+from .models import ObjectiveRequest, TelemetryData, SystemStatus, LoginRequest, TaskItem, TaskUpdate, SoulPreferences, SoulManifest
 from .orchestrator import ExecutiveOrchestrator
 from .inference.router import ModelRouter
 from .security.vault import VaultManager
@@ -47,11 +48,12 @@ async def lifespan(app: FastAPI):
         router = ModelRouter(settings)
         ace = AffectiveEngine()
         
-        # Initialize Executive Engine (Planner/Executor/Critic)
-        orchestrator = ExecutiveOrchestrator(router, vault, ace, settings)
-        
-        task_manager = TaskManager()
+        # Initialize Skills first (Orchestrator needs it)
         skill_manager = SkillManager(vault)
+        task_manager = TaskManager()
+        
+        # Initialize Executive Engine (Planner/Executor/Critic)
+        orchestrator = ExecutiveOrchestrator(router, vault, ace, settings, skill_manager=skill_manager)
         
         await orchestrator.start_background_services()
         logger.info("✅ System Integrity Verified. Manifold Active.")
@@ -149,24 +151,87 @@ async def delete_task(index: int):
     if not task_manager.delete_task(index): raise HTTPException(status_code=404)
     return {"status": "deleted"}
 
-# --- Soul Preference Routes (Vault Secured) ---
-@app.get("/soul/preferences", response_model=SoulPreferences, dependencies=[Depends(verify_authenticated)])
-async def get_soul_preferences():
+# --- Identity Forge (Soul Manifest) Routes ---
+
+@app.get("/soul/manifest", response_model=SoulManifest, dependencies=[Depends(verify_authenticated)])
+async def get_soul_manifest():
     if not vault: raise HTTPException(status_code=503)
     data = vault.retrieve_secret("soul_manifest")
     if not data:
-        # Return defaults
-        return SoulPreferences()
-    return SoulPreferences(**data)
+        return SoulManifest(preferences=SoulPreferences())
+    # Handle legacy format where only preferences existed
+    if "preferences" not in data:
+         return SoulManifest(preferences=SoulPreferences(**data))
+    return SoulManifest(**data)
+
+@app.post("/soul/manifest", dependencies=[Depends(verify_authenticated)])
+async def update_soul_manifest(manifest: SoulManifest):
+    if not vault: raise HTTPException(status_code=503)
+    # Check ACE tether before allowing commit (Simple simulation)
+    if ace and ace.should_throttle():
+         logger.warning("Soul Manifest update blocked by ACE Throttle.")
+         raise HTTPException(status_code=429, detail="Identity Forge Locked: Biometric Stress Detected. Calm down to proceed.")
+         
+    vault.store_secret("soul_manifest", manifest.dict())
+    logger.info("Soul Manifest committed to Simplicial Vault.")
+    return {"status": "calibrated", "hash": hash(str(manifest.dict()))}
+
+@app.post("/soul/preview", dependencies=[Depends(verify_authenticated)])
+async def preview_soul_manifest(manifest: SoulManifest, control_question: str = Body("Analysis of current status?", embed=True)):
+    """Simulates the new personality with full cognitive context."""
+    if not router: raise HTTPException(status_code=503)
+    
+    # Generate comprehensive system prompt for the simulator
+    sys_prompt = f"""
+    [ SYSTEM SIMULATION MODE ]
+    
+    # IDENTITY LAYER
+    NAME: Alluci
+    CORE: {manifest.identityCore}
+    VOICE: {manifest.voiceProfile}
+    DIRECTIVES: {', '.join(manifest.directives)}
+    
+    # COGNITION LAYER
+    REASONING: {manifest.reasoningStyle}
+    FRAMEWORKS: {', '.join(manifest.frameworks)}
+    MINDSETS: {', '.join(manifest.mindsets)}
+    METHODOLOGIES: {', '.join(manifest.methodologies)}
+    CORE LOGIC: {', '.join(manifest.logic)}
+    CHAINS OF THOUGHT: {', '.join(manifest.chainsOfThought)}
+    BEST PRACTICES: {', '.join(manifest.bestPractices)}
+    KNOWLEDGE_GRAPH: {', '.join(manifest.knowledgeGraph)}
+    
+    # PERSONALITY VECTORS
+    - Tone: {manifest.preferences.tone}
+    - Empathy: {manifest.preferences.empathy}
+    - Humor: {manifest.preferences.humor}
+    - Assertiveness: {manifest.preferences.assertiveness}
+    - Creativity: {manifest.preferences.creativity}
+    
+    BOOT SEQUENCE: {manifest.bootSequence}
+    
+    INSTRUCTION: Respond to the user's input as if you were fully instantiated with these parameters.
+    """
+    
+    response = await router.get_response(f"System Instruction: {sys_prompt}\n\nUser: {control_question}", complexity="LOW")
+    return {"preview_response": response, "generated_prompt_snapshot": sys_prompt}
+
+# --- Legacy Support for simple preferences ---
+@app.get("/soul/preferences", response_model=SoulPreferences, dependencies=[Depends(verify_authenticated)])
+async def get_soul_preferences():
+    # Proxy to manifest
+    m = await get_soul_manifest()
+    return m.preferences
 
 @app.post("/soul/preferences", dependencies=[Depends(verify_authenticated)])
 async def update_soul_preferences(prefs: SoulPreferences):
-    if not vault: raise HTTPException(status_code=503)
-    vault.store_secret("soul_manifest", prefs.dict())
-    logger.info("Soul Manifest updated in Simplicial Vault.")
-    return {"status": "calibrated"}
+    # Proxy to manifest update (fetch, patch, save)
+    m = await get_soul_manifest()
+    m.preferences = prefs
+    return await update_soul_manifest(m)
 
-# --- Skill Registry Routes ---
+
+# --- Skill Registry & Review Routes ---
 @app.get("/skills", dependencies=[Depends(verify_authenticated)])
 async def list_skills():
     if not skill_manager: raise HTTPException(status_code=503)
@@ -183,6 +248,25 @@ async def delete_skill(skill_id: str):
     if skill_manager.delete_skill(skill_id):
         return {"status": "deleted"}
     raise HTTPException(status_code=404, detail="Skill not found")
+
+@app.post("/skills/import", dependencies=[Depends(verify_authenticated)])
+async def import_skill_package(package: Dict[str, Any]):
+    """Imports a .polytype package into the Review Queue."""
+    if not skill_manager: raise HTTPException(status_code=503)
+    result = await skill_manager.import_package(package)
+    return result
+
+@app.get("/skills/review", dependencies=[Depends(verify_authenticated)])
+async def get_review_queue():
+    if not skill_manager: raise HTTPException(status_code=503)
+    return skill_manager.get_review_queue()
+
+@app.post("/skills/promote/{skill_id}", dependencies=[Depends(verify_authenticated)])
+async def promote_skill(skill_id: str):
+    if not skill_manager: raise HTTPException(status_code=503)
+    if skill_manager.promote_from_queue(skill_id):
+        return {"status": "promoted"}
+    raise HTTPException(status_code=404, detail="Skill not in review queue")
 
 if __name__ == "__main__":
     uvicorn.run(app, host=settings.HOST, port=settings.PORT)

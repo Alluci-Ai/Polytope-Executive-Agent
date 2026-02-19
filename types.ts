@@ -94,6 +94,24 @@ export interface SoulPreferences {
   conciseness: SoulConciseness;
 }
 
+export interface SoulManifest {
+  preferences: SoulPreferences;
+  identityCore: string;
+  directives: string[];
+  voiceProfile: string;
+  reasoningStyle: string;
+  knowledgeGraph: string[];
+  frameworks: string[];
+  mindsets: string[];
+  bootSequence: string;
+  heartbeat?: string;
+  // Extended Cognition
+  methodologies: string[];
+  logic: string[];
+  chainsOfThought: string[];
+  bestPractices: string[];
+}
+
 export interface PersonalityTraits {
   satireLevel: number;
   analyticalDepth: number;

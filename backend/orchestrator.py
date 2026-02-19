@@ -1,3 +1,4 @@
+
 import asyncio
 import json
 import logging
@@ -19,11 +20,15 @@ from .engine.executor import Executor
 from .engine.critic import Critic
 from .adapters.registry import AdapterRegistry
 from .harmonic_enhancer import HarmonicAssistant
+from .heartbeat import HeartbeatDaemon
+from .skill_manager import SkillManager
 
 class ExecutiveOrchestrator:
-    def __init__(self, router: ModelRouter, vault: VaultManager, ace: AffectiveEngine, settings: Settings):
+    def __init__(self, router: ModelRouter, vault: VaultManager, ace: AffectiveEngine, settings: Settings, skill_manager: SkillManager = None):
         self.settings = settings
         self.logger = logging.getLogger("Orchestrator")
+        self.vault = vault
+        self.skill_manager = skill_manager
         
         # Sub-systems
         self.identity = SovereignIdentity(settings)
@@ -32,6 +37,10 @@ class ExecutiveOrchestrator:
         self.adapter_registry = AdapterRegistry()
         self.harmonic = HarmonicAssistant() # Harmonic Enhancer Integration
         self.ace = ace
+        
+        # Heartbeat System
+        self.heartbeat = HeartbeatDaemon(self, vault)
+        self.heartbeat_task = None
         
         # Pass a callable that returns the engine binding or creates a session
         # For simplicity with SQLModel, we can pass the engine and let Executor handle session creation
@@ -43,9 +52,68 @@ class ExecutiveOrchestrator:
 
     async def start_background_services(self):
         self.logger.info("Background services started.")
+        self.heartbeat_task = asyncio.create_task(self.heartbeat.start())
 
     async def stop_background_services(self):
+        if self.heartbeat_task:
+            self.heartbeat.stop()
+            await self.heartbeat_task
         self.logger.info("Background services stopped.")
+
+    def _build_system_context(self) -> str:
+        """
+        Constructs the cognitive context for the Planner based on the 
+        active Soul Manifest (Identity, Cognition) and Verified Skills.
+        """
+        context_parts = []
+        
+        # 1. Identity & Cognition Layer
+        try:
+            manifest = self.vault.retrieve_secret("soul_manifest")
+            if manifest:
+                id_core = manifest.get("identityCore", "You are an autonomous agent.")
+                reasoning = manifest.get("reasoningStyle", "Analytical.")
+                frameworks = manifest.get("frameworks", [])
+                mindsets = manifest.get("mindsets", [])
+                methodologies = manifest.get("methodologies", [])
+                logic = manifest.get("logic", [])
+                cots = manifest.get("chainsOfThought", [])
+                best_practices = manifest.get("bestPractices", [])
+                
+                context_parts.append(f"IDENTITY CORE: {id_core}")
+                context_parts.append(f"REASONING STYLE: {reasoning}")
+                
+                if frameworks:
+                    context_parts.append(f"MENTAL FRAMEWORKS: {', '.join(frameworks)}")
+                if mindsets:
+                    context_parts.append(f"MINDSETS: {', '.join(mindsets)}")
+                if methodologies:
+                    context_parts.append(f"METHODOLOGIES: {', '.join(methodologies)}")
+                if logic:
+                    context_parts.append(f"CORE LOGIC: {', '.join(logic)}")
+                if cots:
+                    context_parts.append(f"PREFERRED CHAINS OF THOUGHT: {'; '.join(cots)}")
+                if best_practices:
+                    context_parts.append(f"BEST PRACTICES: {'; '.join(best_practices)}")
+
+        except Exception:
+            pass
+
+        # 2. Skills Layer
+        if self.skill_manager:
+            try:
+                skills = self.skill_manager.list_skills()
+                active_skills = [s for s in skills if s.get("verified", False)]
+                if active_skills:
+                    context_parts.append("AVAILABLE COGNITIVE MODULES (SKILLS):")
+                    for s in active_skills:
+                        context_parts.append(f"- {s['name']}: {s['description']}")
+                        if 'logic' in s and s['logic']:
+                            context_parts.append(f"  Logic: {', '.join(s['logic'])}")
+            except Exception:
+                pass
+                
+        return "\n".join(context_parts)
 
     async def execute_objective(self, objective: str, autonomy: str) -> Dict[str, Any]:
         self.logger.info(f"🚀 EXECUTING SOVEREIGN OBJECTIVE: {objective}")
@@ -60,7 +128,10 @@ class ExecutiveOrchestrator:
 
         # 3. Planning
         try:
-            tasks = await self.planner.generate_plan(objective)
+            # Inject Identity & Skills into Planning Context
+            system_context = self._build_system_context()
+            
+            tasks = await self.planner.generate_plan(objective, context=system_context)
             
             # --- Harmonic Ranking Hook ---
             # Prioritize tasks based on Topological and Lattice dynamics
